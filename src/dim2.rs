@@ -79,9 +79,9 @@ impl Sdf<Dim2> for Sdf2dPrimitive {
 
 #[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Arc {
-    radius: f32,
-    thickness: f32,
-    segment: f32,
+    pub radius: f32,
+    pub thickness: f32,
+    pub segment: f32,
 }
 
 impl Arc {
