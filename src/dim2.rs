@@ -1,7 +1,8 @@
 use crate::{Dim, Sdf, SdfBounding, SdfTree};
 use bevy_math::{bounding::*, Vec2};
 
-#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
 pub struct Dim2;
 
 impl Dim for Dim2 {
@@ -34,7 +35,8 @@ impl<IntoShape: Into<Sdf2dPrimitive>> From<IntoShape> for Sdf2d {
     }
 }
 
-#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
 pub enum Sdf2dPrimitive {
     Arc(Arc),
 }
@@ -77,7 +79,8 @@ impl Sdf<Dim2> for Sdf2dPrimitive {
     }
 }
 
-#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
 pub struct Arc {
     pub radius: f32,
     pub thickness: f32,

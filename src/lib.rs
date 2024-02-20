@@ -6,9 +6,19 @@ mod dim3;
 pub use dim2::{Arc, Sdf2d, Sdf2dPrimitive};
 pub use dim3::{Sdf3d, Sdf3dShape};
 
-pub trait Sdf<D: Dim>:
-    SdfBounding<D> + Clone + std::fmt::Debug + serde::Serialize + for<'de> serde::Deserialize<'de>
-{
+#[cfg(not(feature = "serialize"))]
+pub trait ConditionalSerialize {}
+
+#[cfg(not(feature = "serialize"))]
+impl<T> ConditionalSerialize for T {}
+
+#[cfg(feature = "serialize")]
+pub trait ConditionalSerialize: serde::Serialize + for<'de> serde::Deserialize<'de> {}
+
+#[cfg(feature = "serialize")]
+impl<T: serde::Serialize + for<'de> serde::Deserialize<'de>> ConditionalSerialize for T {}
+
+pub trait Sdf<D: Dim>: SdfBounding<D> + Clone + std::fmt::Debug + ConditionalSerialize {
     fn distance(&self, pos: D::Position) -> f32;
     fn gradient(&self, pos: D::Position) -> D::Position;
 }
@@ -18,10 +28,14 @@ pub trait SdfBounding<D: Dim> {
     fn bounding_ball(&self, translation: D::Position, rotation: D::Rotation) -> D::Ball;
 }
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-#[serde(bound(
-    deserialize = "D: for<'de2> serde::Deserialize<'de2>, Shape: for<'de2> serde::Deserialize<'de2>"
-))]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    feature = "serialize",
+    serde(bound(
+        deserialize = "D: for<'de2> serde::Deserialize<'de2>, Shape: for<'de2> serde::Deserialize<'de2>"
+    ))
+)]
 pub struct SdfTree<D: Dim, Shape: Sdf<D>> {
     // TODO: These should probably not be public?
     pub operations: Box<[SdfOperation<D>]>,
@@ -143,23 +157,15 @@ impl<D: Dim, Shape: Sdf<D>> SdfTree<D, Shape> {
     }
 }
 
-pub trait Dim:
-    Clone + Copy + std::fmt::Debug + serde::Serialize + for<'de> serde::Deserialize<'de>
-{
+pub trait Dim: Clone + Copy + std::fmt::Debug + ConditionalSerialize {
     type Position: Clone
         + Copy
         + std::fmt::Debug
         + std::ops::Add<Output = Self::Position>
         + std::ops::Sub<Output = Self::Position>
         + std::ops::Neg<Output = Self::Position>
-        + serde::Serialize
-        + for<'de> serde::Deserialize<'de>;
-    type Rotation: Clone
-        + Copy
-        + std::fmt::Debug
-        + Rotation<Self::Position>
-        + serde::Serialize
-        + for<'de> serde::Deserialize<'de>;
+        + ConditionalSerialize;
+    type Rotation: Clone + Copy + std::fmt::Debug + Rotation<Self::Position> + ConditionalSerialize;
 
     type Aabb: BoundingVolume;
     type Ball: BoundingVolume;
@@ -205,7 +211,8 @@ impl Rotation<bevy_math::Vec3> for bevy_math::Quat {
     }
 }
 
-#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
 pub struct Index(u8);
 
 impl Index {
@@ -290,7 +297,8 @@ impl Index {
     }
 }
 
-#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
 pub enum SdfOperation<D: Dim> {
     Union(Index, Index),
     Invert(Index),
