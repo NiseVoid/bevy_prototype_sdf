@@ -18,7 +18,27 @@ pub trait ConditionalSerialize: serde::Serialize + for<'de> serde::Deserialize<'
 #[cfg(feature = "serialize")]
 impl<T: serde::Serialize + for<'de> serde::Deserialize<'de>> ConditionalSerialize for T {}
 
-pub trait Sdf<D: Dim>: SdfBounding<D> + Clone + std::fmt::Debug + ConditionalSerialize {
+#[cfg(not(feature = "bevy_asset"))]
+pub trait ConditionalBevyReflect {}
+
+#[cfg(not(feature = "bevy_asset"))]
+impl<T> ConditionalBevyReflect for T {}
+
+#[cfg(feature = "bevy_asset")]
+pub trait ConditionalBevyReflect: bevy_reflect::TypePath {}
+
+#[cfg(feature = "bevy_asset")]
+impl<T: bevy_reflect::TypePath> ConditionalBevyReflect for T {}
+
+pub trait Sdf<D: Dim>:
+    SdfBounding<D>
+    + Clone
+    + Sync
+    + Send
+    + std::fmt::Debug
+    + ConditionalSerialize
+    + ConditionalBevyReflect
+{
     fn distance(&self, pos: D::Position) -> f32;
     fn gradient(&self, pos: D::Position) -> D::Position;
 }
@@ -35,6 +55,10 @@ pub trait SdfBounding<D: Dim> {
     serde(bound(
         deserialize = "D: for<'de2> serde::Deserialize<'de2>, Shape: for<'de2> serde::Deserialize<'de2>"
     ))
+)]
+#[cfg_attr(
+    feature = "bevy_asset",
+    derive(bevy_asset::Asset, bevy_reflect::TypePath)
 )]
 pub struct SdfTree<D: Dim, Shape: Sdf<D>> {
     // TODO: These should probably not be public?
@@ -157,15 +181,25 @@ impl<D: Dim, Shape: Sdf<D>> SdfTree<D, Shape> {
     }
 }
 
-pub trait Dim: Clone + Copy + std::fmt::Debug + ConditionalSerialize {
+pub trait Dim:
+    Clone + Copy + std::fmt::Debug + ConditionalSerialize + ConditionalBevyReflect
+{
     type Position: Clone
         + Copy
+        + Sync
+        + Send
         + std::fmt::Debug
         + std::ops::Add<Output = Self::Position>
         + std::ops::Sub<Output = Self::Position>
         + std::ops::Neg<Output = Self::Position>
         + ConditionalSerialize;
-    type Rotation: Clone + Copy + std::fmt::Debug + Rotation<Self::Position> + ConditionalSerialize;
+    type Rotation: Clone
+        + Copy
+        + Sync
+        + Send
+        + std::fmt::Debug
+        + Rotation<Self::Position>
+        + ConditionalSerialize;
 
     type Aabb: BoundingVolume;
     type Ball: BoundingVolume;

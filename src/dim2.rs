@@ -3,6 +3,7 @@ use bevy_math::{bounding::*, Vec2};
 
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bevy_asset", derive(bevy_reflect::TypePath))]
 pub struct Dim2;
 
 impl Dim for Dim2 {
@@ -37,6 +38,7 @@ impl<IntoShape: Into<Sdf2dPrimitive>> From<IntoShape> for Sdf2d {
 
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bevy_asset", derive(bevy_reflect::TypePath))]
 pub enum Sdf2dPrimitive {
     Arc(Arc),
 }
@@ -81,6 +83,7 @@ impl Sdf<Dim2> for Sdf2dPrimitive {
 
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bevy_asset", derive(bevy_reflect::TypePath))]
 pub struct Arc {
     pub radius: f32,
     pub thickness: f32,

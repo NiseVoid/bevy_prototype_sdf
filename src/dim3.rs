@@ -3,6 +3,7 @@ use bevy_math::{bounding::*, primitives::*, Quat, Vec3};
 
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bevy_asset", derive(bevy_reflect::TypePath))]
 pub struct Dim3;
 
 impl Dim for Dim3 {
@@ -38,6 +39,7 @@ impl<IntoShape: Into<Sdf3dShape>> From<IntoShape> for Sdf3d {
 /// An enum dispatch version of Sdf<Vec3> with support for extruded 2d sdfs
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bevy_asset", derive(bevy_reflect::TypePath))]
 pub enum Sdf3dShape {
     Sphere(Sphere),
     Capsule(Capsule3d),
@@ -235,6 +237,7 @@ impl Sdf<Dim3> for Cylinder {
     feature = "serialize",
     serde(bound(deserialize = "Sdf2d: for<'de2> serde::Deserialize<'de2>"))
 )]
+#[cfg_attr(feature = "bevy_asset", derive(bevy_reflect::TypePath))]
 pub struct Extruded<Sdf2d: Sdf<super::dim2::Dim2>> {
     /// The 2D sdf used
     pub sdf: Sdf2d,

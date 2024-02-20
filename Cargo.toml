@@ -5,7 +5,10 @@ edition = "2021"
 
 [features]
 serialize = ["dep:serde", "bevy_math/serialize"]
+bevy_asset = ["dep:bevy_asset", "dep:bevy_reflect"]
 
 [dependencies]
 bevy_math = {version = "0.13", default-features=false}
+bevy_asset = {version = "0.13", default-features=false, optional=true}
+bevy_reflect = {version = "0.13", default-features=false, features=["bevy_math"], optional=true}
 serde = {version = "1.0", features=["serde_derive"], optional = true}
