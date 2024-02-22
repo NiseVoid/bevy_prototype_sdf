@@ -7,6 +7,8 @@ use bevy_math::{bounding::*, primitives::*, Quat, Vec3};
 pub struct Dim3;
 
 impl Dim for Dim3 {
+    const POS_SIZE: usize = 2;
+    const ROT_SIZE: usize = 4;
     type Position = bevy_math::Vec3;
     type Rotation = bevy_math::Quat;
 

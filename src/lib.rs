@@ -3,6 +3,15 @@ use bevy_math::{bounding::*, *};
 mod dim2;
 mod dim3;
 
+mod writable;
+
+#[cfg(feature = "bevy_render")]
+mod render_asset;
+#[cfg(feature = "bevy_render")]
+pub use render_asset::GpuSdfTree;
+#[cfg(feature = "bevy_render")]
+mod to_buffer;
+
 pub use dim2::{Arc, Sdf2d, Sdf2dPrimitive};
 pub use dim3::{Sdf3d, Sdf3dShape};
 
@@ -30,6 +39,18 @@ pub trait ConditionalBevyReflect: bevy_reflect::TypePath {}
 #[cfg(feature = "bevy_asset")]
 impl<T: bevy_reflect::TypePath> ConditionalBevyReflect for T {}
 
+#[cfg(not(feature = "bevy_render"))]
+pub trait ConditionalBevyRender {}
+
+#[cfg(not(feature = "bevy_render"))]
+impl<T> ConditionalBevyRender for T {}
+
+#[cfg(feature = "bevy_render")]
+pub trait ConditionalBevyRender: to_buffer::SdfBuffered {}
+
+#[cfg(feature = "bevy_render")]
+impl<T: to_buffer::SdfBuffered> ConditionalBevyRender for T {}
+
 pub trait Sdf<D: Dim>:
     SdfBounding<D>
     + Clone
@@ -47,6 +68,13 @@ pub trait SdfBounding<D: Dim> {
     fn aabb(&self, translation: D::Position, rotation: D::Rotation) -> D::Aabb;
     fn bounding_ball(&self, translation: D::Position, rotation: D::Rotation) -> D::Ball;
 }
+
+pub trait SdfShape<D: Dim>: Sdf<D> + ConditionalBevyRender {}
+
+#[cfg(not(feature = "bevy_render"))]
+impl<D: Dim, T: Sdf<D>> SdfShape<D> for T {}
+#[cfg(feature = "bevy_render")]
+impl<D: Dim, T: Sdf<D> + to_buffer::SdfBuffered> SdfShape<D> for T {}
 
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
@@ -182,8 +210,10 @@ impl<D: Dim, Shape: Sdf<D>> SdfTree<D, Shape> {
 }
 
 pub trait Dim:
-    Clone + Copy + std::fmt::Debug + ConditionalSerialize + ConditionalBevyReflect
+    Clone + Copy + Sync + Send + std::fmt::Debug + ConditionalSerialize + ConditionalBevyReflect
 {
+    const POS_SIZE: usize;
+    const ROT_SIZE: usize;
     type Position: Clone
         + Copy
         + Sync
@@ -192,6 +222,7 @@ pub trait Dim:
         + std::ops::Add<Output = Self::Position>
         + std::ops::Sub<Output = Self::Position>
         + std::ops::Neg<Output = Self::Position>
+        + writable::Writable
         + ConditionalSerialize;
     type Rotation: Clone
         + Copy
@@ -199,6 +230,7 @@ pub trait Dim:
         + Send
         + std::fmt::Debug
         + Rotation<Self::Position>
+        + writable::Writable
         + ConditionalSerialize;
 
     type Aabb: BoundingVolume;

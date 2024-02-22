@@ -7,6 +7,8 @@ use bevy_math::{bounding::*, Vec2};
 pub struct Dim2;
 
 impl Dim for Dim2 {
+    const POS_SIZE: usize = 2;
+    const ROT_SIZE: usize = 1;
     type Position = bevy_math::Vec2;
     type Rotation = f32;
 
