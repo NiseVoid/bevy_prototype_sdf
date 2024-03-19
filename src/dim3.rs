@@ -1,9 +1,21 @@
 use crate::{Dim, Sdf, Sdf2d, SdfBounding, SdfTree};
+
 use bevy_math::{bounding::*, primitives::*, Quat, Vec3};
+
+#[cfg(all(feature = "bevy_reflect", feature = "serialize"))]
+use bevy_reflect::ReflectDeserialize;
 
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "bevy_asset", derive(bevy_reflect::TypePath))]
+#[cfg_attr(
+    all(feature = "bevy_asset", not(feature = "bevy_reflect")),
+    derive(bevy_reflect::TypePath)
+)]
+#[cfg_attr(feature = "bevy_reflect", derive(bevy_reflect::Reflect))]
+#[cfg_attr(
+    all(feature = "bevy_reflect", feature = "serialize"),
+    reflect(Deserialize)
+)]
 pub struct Dim3;
 
 impl Dim for Dim3 {
@@ -32,8 +44,8 @@ impl<IntoShape: Into<Sdf3dShape>> From<IntoShape> for Sdf3d {
     fn from(value: IntoShape) -> Self {
         let shape = value.into();
         Self {
-            operations: Box::new([]),
-            shapes: Box::new([shape]),
+            operations: Vec::new(),
+            shapes: vec![shape],
         }
     }
 }
@@ -41,7 +53,15 @@ impl<IntoShape: Into<Sdf3dShape>> From<IntoShape> for Sdf3d {
 /// An enum dispatch version of Sdf<Vec3> with support for extruded 2d sdfs
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "bevy_asset", derive(bevy_reflect::TypePath))]
+#[cfg_attr(
+    all(feature = "bevy_asset", not(feature = "bevy_reflect")),
+    derive(bevy_reflect::TypePath)
+)]
+#[cfg_attr(feature = "bevy_reflect", derive(bevy_reflect::Reflect))]
+#[cfg_attr(
+    all(feature = "bevy_reflect", feature = "serialize"),
+    reflect(Deserialize)
+)]
 pub enum Sdf3dShape {
     Sphere(Sphere),
     Capsule(Capsule3d),
@@ -239,7 +259,15 @@ impl Sdf<Dim3> for Cylinder {
     feature = "serialize",
     serde(bound(deserialize = "Sdf2d: for<'de2> serde::Deserialize<'de2>"))
 )]
-#[cfg_attr(feature = "bevy_asset", derive(bevy_reflect::TypePath))]
+#[cfg_attr(
+    all(feature = "bevy_asset", not(feature = "bevy_reflect")),
+    derive(bevy_reflect::TypePath)
+)]
+#[cfg_attr(feature = "bevy_reflect", derive(bevy_reflect::Reflect))]
+#[cfg_attr(
+    all(feature = "bevy_reflect", feature = "serialize"),
+    reflect(Deserialize)
+)]
 pub struct Extruded<Sdf2d: Sdf<super::dim2::Dim2>> {
     /// The 2D sdf used
     pub sdf: Sdf2d,

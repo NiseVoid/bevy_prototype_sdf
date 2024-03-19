@@ -6,6 +6,7 @@ edition = "2021"
 [features]
 default = ["serialize", "bevy_asset", "bevy_render"]
 serialize = ["dep:serde", "bevy_math/serialize"]
+bevy_reflect = ["dep:bevy_reflect"]
 bevy_asset = ["dep:bevy_asset", "dep:bevy_reflect"]
 bevy_render = ["dep:bevy_render", "dep:bevy_ecs", "bevy_asset"]
 

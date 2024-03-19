@@ -1,9 +1,18 @@
 use crate::{Dim, Sdf, SdfBounding, SdfTree};
-use bevy_math::{bounding::*, Vec2};
+
+use bevy_math::{bounding::*, primitives::*, Vec2};
+
+#[cfg(all(feature = "bevy_reflect", feature = "serialize"))]
+use bevy_reflect::ReflectDeserialize;
 
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "bevy_asset", derive(bevy_reflect::TypePath))]
+#[cfg_attr(
+    all(feature = "bevy_asset", not(feature = "bevy_reflect")),
+    derive(bevy_reflect::TypePath)
+)]
+#[cfg_attr(feature = "bevy_reflect", derive(bevy_reflect::Reflect))]
+#[cfg_attr(feature = "bevy_reflect", reflect(Deserialize))]
 pub struct Dim2;
 
 impl Dim for Dim2 {
@@ -32,17 +41,43 @@ impl<IntoShape: Into<Sdf2dPrimitive>> From<IntoShape> for Sdf2d {
     fn from(value: IntoShape) -> Self {
         let shape = value.into();
         Self {
-            operations: Box::new([]),
-            shapes: Box::new([shape]),
+            operations: Vec::new(),
+            shapes: vec![shape],
         }
     }
 }
 
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "bevy_asset", derive(bevy_reflect::TypePath))]
+#[cfg_attr(
+    all(feature = "bevy_asset", not(feature = "bevy_reflect")),
+    derive(bevy_reflect::TypePath)
+)]
+#[cfg_attr(feature = "bevy_reflect", derive(bevy_reflect::Reflect))]
+#[cfg_attr(feature = "bevy_reflect", reflect(Deserialize))]
 pub enum Sdf2dPrimitive {
+    Circle(Circle),
+    // Triangle(Triangle2d),
+    Rectangle(Rectangle),
+    // TODO:
+    // Rhombus
+    // Parallelogram
+    // Vesica
+    // Heart
+    // Moon
     Arc(Arc),
+}
+
+impl From<Circle> for Sdf2dPrimitive {
+    fn from(value: Circle) -> Self {
+        Self::Circle(value)
+    }
+}
+
+impl From<Rectangle> for Sdf2dPrimitive {
+    fn from(value: Rectangle) -> Self {
+        Self::Rectangle(value)
+    }
 }
 
 impl From<Arc> for Sdf2dPrimitive {
@@ -55,6 +90,9 @@ impl SdfBounding<Dim2> for Sdf2dPrimitive {
     fn aabb(&self, translation: Vec2, rotation: f32) -> Aabb2d {
         use Sdf2dPrimitive::*;
         match self {
+            Circle(c) => c.aabb_2d(translation, rotation),
+            // Triangle(t) => t.aabb_2d(translation, rotation),
+            Rectangle(r) => r.aabb_2d(translation, rotation),
             Arc(a) => a.aabb(translation, rotation),
         }
     }
@@ -62,6 +100,9 @@ impl SdfBounding<Dim2> for Sdf2dPrimitive {
     fn bounding_ball(&self, translation: Vec2, rotation: f32) -> BoundingCircle {
         use Sdf2dPrimitive::*;
         match self {
+            Circle(c) => c.bounding_circle(translation, rotation),
+            // Triangle(t) => t.bounding_circle(translation, rotation),
+            Rectangle(r) => r.bounding_circle(translation, rotation),
             Arc(a) => a.bounding_ball(translation, rotation),
         }
     }
@@ -71,6 +112,9 @@ impl Sdf<Dim2> for Sdf2dPrimitive {
     fn distance(&self, pos: Vec2) -> f32 {
         use Sdf2dPrimitive::*;
         match self {
+            Circle(c) => c.distance(pos),
+            // Triangle(t) => t.distance(pos),
+            Rectangle(r) => r.distance(pos),
             Arc(a) => a.distance(pos),
         }
     }
@@ -78,14 +122,66 @@ impl Sdf<Dim2> for Sdf2dPrimitive {
     fn gradient(&self, pos: Vec2) -> Vec2 {
         use Sdf2dPrimitive::*;
         match self {
+            Circle(c) => c.gradient(pos),
+            // Triangle(t) => t.gradient(pos),
+            Rectangle(r) => r.gradient(pos),
             Arc(a) => a.gradient(pos),
+        }
+    }
+}
+
+impl Sdf<Dim2> for Circle {
+    fn distance(&self, pos: Vec2) -> f32 {
+        pos.length() - self.radius
+    }
+
+    fn gradient(&self, pos: Vec2) -> Vec2 {
+        if pos == Vec2::ZERO {
+            Vec2::ZERO
+        } else {
+            pos.normalize()
+        }
+    }
+}
+
+impl Sdf<Dim2> for Rectangle {
+    fn distance(&self, pos: Vec2) -> f32 {
+        let q = pos.abs() - self.half_size;
+        let l = q.max(Vec2::ZERO).length();
+        l + q.max_element().min(0.)
+    }
+
+    fn gradient(&self, pos: Vec2) -> Vec2 {
+        if pos == Vec2::ZERO {
+            return Vec2::ZERO;
+        }
+
+        let abs_pos = pos.abs();
+        let q = abs_pos - self.half_size;
+        let q_or_zero = q.max(Vec2::ZERO);
+        let l = q_or_zero.length_squared();
+        if l > 0. {
+            // If we are outside the box, we can normalize q_or_zero and match it to the
+            // pos sign (so we get the direction relative to the octant we are on)
+            q_or_zero / l.sqrt() * pos.signum()
+        } else {
+            // If we are on the inside, the gradient points to a normalized vector of the
+            // closests sides
+            let distance = -q;
+            let min = distance.min_element();
+            Vec2::select(distance.cmpeq(Vec2::splat(min)), pos.signum(), Vec2::ZERO).normalize()
         }
     }
 }
 
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "bevy_asset", derive(bevy_reflect::TypePath))]
+#[cfg_attr(
+    all(feature = "bevy_asset", not(feature = "bevy_reflect")),
+    derive(bevy_reflect::TypePath)
+)]
+#[cfg_attr(feature = "bevy_reflect", derive(bevy_reflect::Reflect))]
+#[cfg_attr(feature = "bevy_reflect", reflect(Deserialize))]
 pub struct Arc {
     pub radius: f32,
     pub thickness: f32,

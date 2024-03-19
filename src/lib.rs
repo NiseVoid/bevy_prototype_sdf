@@ -15,6 +15,9 @@ mod to_buffer;
 pub use dim2::{Arc, Sdf2d, Sdf2dPrimitive};
 pub use dim3::{Sdf3d, Sdf3dShape};
 
+#[cfg(all(feature = "bevy_reflect", feature = "serialize"))]
+use bevy_reflect::ReflectDeserialize;
+
 #[cfg(not(feature = "serialize"))]
 pub trait ConditionalSerialize {}
 
@@ -27,17 +30,29 @@ pub trait ConditionalSerialize: serde::Serialize + for<'de> serde::Deserialize<'
 #[cfg(feature = "serialize")]
 impl<T: serde::Serialize + for<'de> serde::Deserialize<'de>> ConditionalSerialize for T {}
 
-#[cfg(not(feature = "bevy_asset"))]
+#[cfg(not(any(feature = "bevy_asset", feature = "bevy_reflect")))]
 pub trait ConditionalBevyReflect {}
 
-#[cfg(not(feature = "bevy_asset"))]
+#[cfg(not(any(feature = "bevy_asset", feature = "bevy_reflect")))]
 impl<T> ConditionalBevyReflect for T {}
 
-#[cfg(feature = "bevy_asset")]
+#[cfg(all(feature = "bevy_asset", not(feature = "bevy_reflect")))]
 pub trait ConditionalBevyReflect: bevy_reflect::TypePath {}
 
-#[cfg(feature = "bevy_asset")]
+#[cfg(all(feature = "bevy_asset", not(feature = "bevy_reflect")))]
 impl<T: bevy_reflect::TypePath> ConditionalBevyReflect for T {}
+
+#[cfg(feature = "bevy_reflect")]
+pub trait ConditionalBevyReflect:
+    bevy_reflect::Reflect + bevy_reflect::FromReflect + bevy_reflect::TypePath
+{
+}
+
+#[cfg(feature = "bevy_reflect")]
+impl<T: bevy_reflect::Reflect + bevy_reflect::FromReflect + bevy_reflect::TypePath>
+    ConditionalBevyReflect for T
+{
+}
 
 #[cfg(not(feature = "bevy_render"))]
 pub trait ConditionalBevyRender {}
@@ -84,14 +99,17 @@ impl<D: Dim, T: Sdf<D> + to_buffer::SdfBuffered> SdfShape<D> for T {}
         deserialize = "D: for<'de2> serde::Deserialize<'de2>, Shape: for<'de2> serde::Deserialize<'de2>"
     ))
 )]
+#[cfg_attr(feature = "bevy_asset", derive(bevy_asset::Asset))]
 #[cfg_attr(
-    feature = "bevy_asset",
-    derive(bevy_asset::Asset, bevy_reflect::TypePath)
+    all(feature = "bevy_asset", not(feature = "bevy_reflect")),
+    derive(bevy_reflect::TypePath)
 )]
+#[cfg_attr(feature = "bevy_reflect", derive(bevy_reflect::Reflect))]
+#[cfg_attr(feature = "bevy_reflect", reflect(Deserialize))]
 pub struct SdfTree<D: Dim, Shape: Sdf<D>> {
     // TODO: These should probably not be public?
-    pub operations: Box<[SdfOperation<D>]>,
-    pub shapes: Box<[Shape]>,
+    pub operations: Vec<SdfOperation<D>>,
+    pub shapes: Vec<Shape>,
 }
 
 impl<D: Dim, Shape: Sdf<D>> Sdf<D> for SdfTree<D, Shape> {
@@ -223,7 +241,8 @@ pub trait Dim:
         + std::ops::Sub<Output = Self::Position>
         + std::ops::Neg<Output = Self::Position>
         + writable::Writable
-        + ConditionalSerialize;
+        + ConditionalSerialize
+        + ConditionalBevyReflect;
     type Rotation: Clone
         + Copy
         + Sync
@@ -231,7 +250,8 @@ pub trait Dim:
         + std::fmt::Debug
         + Rotation<Self::Position>
         + writable::Writable
-        + ConditionalSerialize;
+        + ConditionalSerialize
+        + ConditionalBevyReflect;
 
     type Aabb: BoundingVolume;
     type Ball: BoundingVolume;
@@ -279,6 +299,12 @@ impl Rotation<bevy_math::Vec3> for bevy_math::Quat {
 
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    all(feature = "bevy_asset", not(feature = "bevy_reflect")),
+    derive(bevy_reflect::TypePath)
+)]
+#[cfg_attr(feature = "bevy_reflect", derive(bevy_reflect::Reflect))]
+#[cfg_attr(feature = "bevy_reflect", reflect(Deserialize))]
 pub struct Index(u8);
 
 impl Index {
@@ -365,6 +391,12 @@ impl Index {
 
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    all(feature = "bevy_asset", not(feature = "bevy_reflect")),
+    derive(bevy_reflect::TypePath)
+)]
+#[cfg_attr(feature = "bevy_reflect", derive(bevy_reflect::Reflect))]
+#[cfg_attr(feature = "bevy_reflect", reflect(Deserialize))]
 pub enum SdfOperation<D: Dim> {
     Union(Index, Index),
     Invert(Index),

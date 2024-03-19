@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use crate::{to_buffer::SdfBuffered, Dim, SdfShape, SdfTree};
 use bevy_ecs::system::{lifetimeless::SRes, SystemParamItem};
 use bevy_render::{
@@ -7,6 +9,14 @@ use bevy_render::{
 };
 
 pub struct GpuSdfTree(pub Buffer);
+
+impl Deref for GpuSdfTree {
+    type Target = Buffer;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 impl<D: Dim, S: SdfShape<D>> RenderAsset for SdfTree<D, S> {
     type PreparedAsset = GpuSdfTree;
@@ -20,6 +30,19 @@ impl<D: Dim, S: SdfShape<D>> RenderAsset for SdfTree<D, S> {
         self,
         render_device: &mut SystemParamItem<Self::Param>,
     ) -> Result<Self::PreparedAsset, bevy_render::render_asset::PrepareAssetError<Self>> {
+        let data = self.to_gpu_bytes();
+
+        let data_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
+            usage: BufferUsages::STORAGE,
+            label: Some("SDF Tree Buffer"),
+            contents: &data,
+        });
+        Ok(GpuSdfTree(data_buffer))
+    }
+}
+
+impl<D: Dim, S: SdfShape<D>> SdfTree<D, S> {
+    pub fn to_gpu_bytes(&self) -> Vec<u8> {
         let mut data = Vec::with_capacity(8 + (self.operations.len() + self.shapes.len()) * 8);
         let mut size = (self.operations.len() + self.shapes.len()) * 2;
 
@@ -49,12 +72,6 @@ impl<D: Dim, S: SdfShape<D>> RenderAsset for SdfTree<D, S> {
             shape.write_values(&mut data);
         }
 
-        eprintln!("Creating buffer with data: {:?}", data);
-        let data_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
-            usage: BufferUsages::STORAGE,
-            label: Some("SDF Tree Buffer"),
-            contents: &data,
-        });
-        Ok(GpuSdfTree(data_buffer))
+        data
     }
 }

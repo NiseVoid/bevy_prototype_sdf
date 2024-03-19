@@ -1,4 +1,4 @@
-use crate::{writable::Writable, Dim, Sdf3dShape, SdfOperation};
+use crate::{writable::Writable, Dim, Sdf2dPrimitive, Sdf3dShape, SdfOperation};
 
 pub trait ValueWriter {
     fn write(&mut self, v: impl Writable);
@@ -78,13 +78,20 @@ impl SdfBuffered for Sdf3dShape {
             Capsule(_) => 2,
             Cylinder(_) => 2,
             Cuboid(_) => 3,
-            Extruded(_) => todo!(),
+            Extruded(e) => {
+                // TODO: Support 2d sdfs with operations
+                if e.sdf.operations.len() != 0 {
+                    todo!()
+                }
+
+                2 + e.sdf.shapes[0].n_values()
+            }
         }
     }
 
     fn write_values(&self, w: &mut impl ValueWriter) {
         use Sdf3dShape::*;
-        match *self {
+        match self {
             Sphere(s) => {
                 w.write(s.radius);
             }
@@ -99,7 +106,55 @@ impl SdfBuffered for Sdf3dShape {
             Cuboid(b) => {
                 w.write(b.half_size);
             }
-            Extruded(_) => todo!(),
+            Extruded(e) => {
+                w.write(e.half_height);
+                w.write(e.sdf.shapes[0].id());
+                e.sdf.shapes[0].write_values(w);
+            }
+        }
+    }
+}
+
+impl SdfBuffered for Sdf2dPrimitive {
+    fn id(&self) -> u32 {
+        use Sdf2dPrimitive::*;
+        match self {
+            Circle(_) => 0,
+            // Triangle(_) => 1,
+            Rectangle(_) => 2,
+            Arc(_) => 3,
+        }
+    }
+
+    fn n_values(&self) -> usize {
+        use Sdf2dPrimitive::*;
+        match self {
+            Circle(_) => 1,
+            // Triangle(_) => 3,
+            Rectangle(_) => 2,
+            Arc(_) => 3,
+        }
+    }
+
+    fn write_values(&self, w: &mut impl ValueWriter) {
+        use Sdf2dPrimitive::*;
+        match self {
+            Circle(c) => {
+                w.write(c.radius);
+            }
+            // Triangle(t) => {
+            //     w.write(t.0[0]);
+            //     w.write(t.0[1]);
+            //     w.write(t.0[2]);
+            // },
+            Rectangle(r) => {
+                w.write(r.half_size);
+            }
+            Arc(a) => {
+                w.write(a.radius);
+                w.write(a.thickness);
+                w.write(a.segment);
+            }
         }
     }
 }
