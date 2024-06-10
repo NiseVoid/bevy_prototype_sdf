@@ -1,7 +1,7 @@
 use bevy_math::{bounding::*, *};
 
-mod dim2;
-mod dim3;
+pub mod dim2;
+pub mod dim3;
 
 mod writable;
 
