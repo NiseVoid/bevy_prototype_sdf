@@ -7,10 +7,6 @@ use bevy_reflect::ReflectDeserialize;
 
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(
-    all(feature = "bevy_asset", not(feature = "bevy_reflect")),
-    derive(bevy_reflect::TypePath)
-)]
 #[cfg_attr(feature = "bevy_reflect", derive(bevy_reflect::Reflect))]
 #[cfg_attr(
     all(feature = "bevy_reflect", feature = "serialize"),
@@ -29,12 +25,12 @@ impl Dim for Dim3 {
 }
 
 impl<P: Sdf<Dim3> + Bounded3d> SdfBounding<Dim3> for P {
-    fn aabb(&self, translation: Vec3, rotation: Quat) -> Aabb3d {
-        self.aabb_3d(translation, rotation)
+    fn aabb(&self, translation: Vec3, rotation: impl Into<Quat>) -> Aabb3d {
+        self.aabb_3d(translation, rotation.into())
     }
 
-    fn bounding_ball(&self, translation: Vec3, rotation: Quat) -> BoundingSphere {
-        self.bounding_sphere(translation, rotation)
+    fn bounding_ball(&self, translation: Vec3, rotation: impl Into<Quat>) -> BoundingSphere {
+        self.bounding_sphere(translation, rotation.into())
     }
 }
 
@@ -53,10 +49,6 @@ impl<IntoShape: Into<Sdf3dShape>> From<IntoShape> for Sdf3d {
 /// An enum dispatch version of Sdf<Vec3> with support for extruded 2d sdfs
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(
-    all(feature = "bevy_asset", not(feature = "bevy_reflect")),
-    derive(bevy_reflect::TypePath)
-)]
 #[cfg_attr(feature = "bevy_reflect", derive(bevy_reflect::Reflect))]
 #[cfg_attr(
     all(feature = "bevy_reflect", feature = "serialize"),
@@ -101,7 +93,8 @@ impl From<Extruded<Sdf2d>> for Sdf3dShape {
 }
 
 impl SdfBounding<Dim3> for Sdf3dShape {
-    fn aabb(&self, translation: Vec3, rotation: Quat) -> Aabb3d {
+    fn aabb(&self, translation: Vec3, rotation: impl Into<Quat>) -> Aabb3d {
+        let rotation = rotation.into();
         use Sdf3dShape::*;
         match self {
             Sphere(s) => s.aabb(translation, rotation),
@@ -112,7 +105,8 @@ impl SdfBounding<Dim3> for Sdf3dShape {
         }
     }
 
-    fn bounding_ball(&self, translation: Vec3, rotation: Quat) -> BoundingSphere {
+    fn bounding_ball(&self, translation: Vec3, rotation: impl Into<Quat>) -> BoundingSphere {
+        let rotation = rotation.into();
         use Sdf3dShape::*;
         match self {
             Sphere(s) => s.bounding_ball(translation, rotation),
@@ -259,10 +253,6 @@ impl Sdf<Dim3> for Cylinder {
     feature = "serialize",
     serde(bound(deserialize = "Sdf2d: for<'de2> serde::Deserialize<'de2>"))
 )]
-#[cfg_attr(
-    all(feature = "bevy_asset", not(feature = "bevy_reflect")),
-    derive(bevy_reflect::TypePath)
-)]
 #[cfg_attr(feature = "bevy_reflect", derive(bevy_reflect::Reflect))]
 #[cfg_attr(
     all(feature = "bevy_reflect", feature = "serialize"),
@@ -285,7 +275,8 @@ impl super::dim2::Sdf2d {
 }
 
 impl<Sdf2d: Sdf<super::dim2::Dim2>> SdfBounding<Dim3> for Extruded<Sdf2d> {
-    fn aabb(&self, translation: Vec3, rotation: Quat) -> Aabb3d {
+    fn aabb(&self, translation: Vec3, rotation: impl Into<Quat>) -> Aabb3d {
+        let rotation = rotation.into();
         use bevy_math::{Mat3, Vec2};
         let rect = self.sdf.aabb(Vec2::ZERO, 0.);
         let rect_size = rect.half_size();
@@ -306,7 +297,8 @@ impl<Sdf2d: Sdf<super::dim2::Dim2>> SdfBounding<Dim3> for Extruded<Sdf2d> {
         Aabb3d::new(offset, half_size)
     }
 
-    fn bounding_ball(&self, translation: Vec3, rotation: Quat) -> BoundingSphere {
+    fn bounding_ball(&self, translation: Vec3, rotation: impl Into<Quat>) -> BoundingSphere {
+        let rotation = rotation.into();
         use bevy_math::Vec2;
         let circle = self.sdf.bounding_ball(Vec2::ZERO, 0.);
 

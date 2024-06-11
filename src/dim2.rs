@@ -1,36 +1,35 @@
 use crate::{Dim, Sdf, SdfBounding, SdfTree};
 
-use bevy_math::{bounding::*, primitives::*, Vec2};
+use bevy_math::{bounding::*, primitives::*, Rot2, Vec2};
 
 #[cfg(all(feature = "bevy_reflect", feature = "serialize"))]
 use bevy_reflect::ReflectDeserialize;
 
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(
-    all(feature = "bevy_asset", not(feature = "bevy_reflect")),
-    derive(bevy_reflect::TypePath)
-)]
 #[cfg_attr(feature = "bevy_reflect", derive(bevy_reflect::Reflect))]
-#[cfg_attr(feature = "bevy_reflect", reflect(Deserialize))]
+#[cfg_attr(
+    all(feature = "bevy_reflect", feature = "serialize"),
+    reflect(Deserialize)
+)]
 pub struct Dim2;
 
 impl Dim for Dim2 {
     const POS_SIZE: usize = 2;
     const ROT_SIZE: usize = 1;
     type Position = bevy_math::Vec2;
-    type Rotation = f32;
+    type Rotation = Rot2;
 
     type Aabb = Aabb2d;
     type Ball = BoundingCircle;
 }
 
 impl<P: Sdf<Dim2> + Bounded2d> SdfBounding<Dim2> for P {
-    fn aabb(&self, translation: Vec2, rotation: f32) -> Aabb2d {
+    fn aabb(&self, translation: Vec2, rotation: impl Into<Rot2>) -> Aabb2d {
         self.aabb_2d(translation, rotation)
     }
 
-    fn bounding_ball(&self, translation: Vec2, rotation: f32) -> BoundingCircle {
+    fn bounding_ball(&self, translation: Vec2, rotation: impl Into<Rot2>) -> BoundingCircle {
         self.bounding_circle(translation, rotation)
     }
 }
@@ -49,12 +48,11 @@ impl<IntoShape: Into<Sdf2dPrimitive>> From<IntoShape> for Sdf2d {
 
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(
-    all(feature = "bevy_asset", not(feature = "bevy_reflect")),
-    derive(bevy_reflect::TypePath)
-)]
 #[cfg_attr(feature = "bevy_reflect", derive(bevy_reflect::Reflect))]
-#[cfg_attr(feature = "bevy_reflect", reflect(Deserialize))]
+#[cfg_attr(
+    all(feature = "bevy_reflect", feature = "serialize"),
+    reflect(Deserialize)
+)]
 pub enum Sdf2dPrimitive {
     Circle(Circle),
     // Triangle(Triangle2d),
@@ -87,7 +85,7 @@ impl From<Arc> for Sdf2dPrimitive {
 }
 
 impl SdfBounding<Dim2> for Sdf2dPrimitive {
-    fn aabb(&self, translation: Vec2, rotation: f32) -> Aabb2d {
+    fn aabb(&self, translation: Vec2, rotation: impl Into<Rot2>) -> Aabb2d {
         use Sdf2dPrimitive::*;
         match self {
             Circle(c) => c.aabb_2d(translation, rotation),
@@ -97,7 +95,7 @@ impl SdfBounding<Dim2> for Sdf2dPrimitive {
         }
     }
 
-    fn bounding_ball(&self, translation: Vec2, rotation: f32) -> BoundingCircle {
+    fn bounding_ball(&self, translation: Vec2, rotation: impl Into<Rot2>) -> BoundingCircle {
         use Sdf2dPrimitive::*;
         match self {
             Circle(c) => c.bounding_circle(translation, rotation),
@@ -176,12 +174,11 @@ impl Sdf<Dim2> for Rectangle {
 
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(
-    all(feature = "bevy_asset", not(feature = "bevy_reflect")),
-    derive(bevy_reflect::TypePath)
-)]
 #[cfg_attr(feature = "bevy_reflect", derive(bevy_reflect::Reflect))]
-#[cfg_attr(feature = "bevy_reflect", reflect(Deserialize))]
+#[cfg_attr(
+    all(feature = "bevy_reflect", feature = "serialize"),
+    reflect(Deserialize)
+)]
 pub struct Arc {
     pub radius: f32,
     pub thickness: f32,
@@ -232,7 +229,7 @@ impl Sdf<Dim2> for Arc {
 }
 
 impl Bounded2d for Arc {
-    fn aabb_2d(&self, translation: Vec2, rotation: f32) -> Aabb2d {
+    fn aabb_2d(&self, translation: Vec2, rotation: impl Into<Rot2>) -> Aabb2d {
         // TODO
         _ = rotation;
         let r = self.radius + self.thickness;
@@ -248,7 +245,7 @@ impl Bounded2d for Arc {
         }
     }
 
-    fn bounding_circle(&self, translation: Vec2, rotation: f32) -> BoundingCircle {
+    fn bounding_circle(&self, translation: Vec2, rotation: impl Into<Rot2>) -> BoundingCircle {
         // TODO: This isn't an optimal bounding circle
         _ = rotation;
         BoundingCircle::new(translation, self.radius)

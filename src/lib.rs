@@ -5,11 +5,6 @@ pub mod dim3;
 
 mod writable;
 
-#[cfg(feature = "bevy_render")]
-mod render_asset;
-#[cfg(feature = "bevy_render")]
-pub use render_asset::GpuSdfTree;
-#[cfg(feature = "bevy_render")]
 mod to_buffer;
 
 pub use dim2::{Arc, Sdf2d, Sdf2dPrimitive};
@@ -30,41 +25,30 @@ pub trait ConditionalSerialize: serde::Serialize + for<'de> serde::Deserialize<'
 #[cfg(feature = "serialize")]
 impl<T: serde::Serialize + for<'de> serde::Deserialize<'de>> ConditionalSerialize for T {}
 
-#[cfg(not(any(feature = "bevy_asset", feature = "bevy_reflect")))]
+#[cfg(not(feature = "bevy_reflect"))]
 pub trait ConditionalBevyReflect {}
 
-#[cfg(not(any(feature = "bevy_asset", feature = "bevy_reflect")))]
+#[cfg(not(feature = "bevy_reflect"))]
 impl<T> ConditionalBevyReflect for T {}
-
-#[cfg(all(feature = "bevy_asset", not(feature = "bevy_reflect")))]
-pub trait ConditionalBevyReflect: bevy_reflect::TypePath {}
-
-#[cfg(all(feature = "bevy_asset", not(feature = "bevy_reflect")))]
-impl<T: bevy_reflect::TypePath> ConditionalBevyReflect for T {}
 
 #[cfg(feature = "bevy_reflect")]
 pub trait ConditionalBevyReflect:
-    bevy_reflect::Reflect + bevy_reflect::FromReflect + bevy_reflect::TypePath
+    bevy_reflect::Reflect
+    + bevy_reflect::FromReflect
+    + bevy_reflect::TypePath
+    + bevy_reflect::GetTypeRegistration
 {
 }
 
 #[cfg(feature = "bevy_reflect")]
-impl<T: bevy_reflect::Reflect + bevy_reflect::FromReflect + bevy_reflect::TypePath>
-    ConditionalBevyReflect for T
+impl<
+        T: bevy_reflect::Reflect
+            + bevy_reflect::FromReflect
+            + bevy_reflect::TypePath
+            + bevy_reflect::GetTypeRegistration,
+    > ConditionalBevyReflect for T
 {
 }
-
-#[cfg(not(feature = "bevy_render"))]
-pub trait ConditionalBevyRender {}
-
-#[cfg(not(feature = "bevy_render"))]
-impl<T> ConditionalBevyRender for T {}
-
-#[cfg(feature = "bevy_render")]
-pub trait ConditionalBevyRender: to_buffer::SdfBuffered {}
-
-#[cfg(feature = "bevy_render")]
-impl<T: to_buffer::SdfBuffered> ConditionalBevyRender for T {}
 
 pub trait Sdf<D: Dim>:
     SdfBounding<D>
@@ -80,15 +64,12 @@ pub trait Sdf<D: Dim>:
 }
 
 pub trait SdfBounding<D: Dim> {
-    fn aabb(&self, translation: D::Position, rotation: D::Rotation) -> D::Aabb;
-    fn bounding_ball(&self, translation: D::Position, rotation: D::Rotation) -> D::Ball;
+    fn aabb(&self, translation: D::Position, rotation: impl Into<D::Rotation>) -> D::Aabb;
+    fn bounding_ball(&self, translation: D::Position, rotation: impl Into<D::Rotation>) -> D::Ball;
 }
 
-pub trait SdfShape<D: Dim>: Sdf<D> + ConditionalBevyRender {}
+pub trait SdfShape<D: Dim>: Sdf<D> + to_buffer::SdfBuffered {}
 
-#[cfg(not(feature = "bevy_render"))]
-impl<D: Dim, T: Sdf<D>> SdfShape<D> for T {}
-#[cfg(feature = "bevy_render")]
 impl<D: Dim, T: Sdf<D> + to_buffer::SdfBuffered> SdfShape<D> for T {}
 
 #[derive(Clone, Debug)]
@@ -100,12 +81,11 @@ impl<D: Dim, T: Sdf<D> + to_buffer::SdfBuffered> SdfShape<D> for T {}
     ))
 )]
 #[cfg_attr(feature = "bevy_asset", derive(bevy_asset::Asset))]
-#[cfg_attr(
-    all(feature = "bevy_asset", not(feature = "bevy_reflect")),
-    derive(bevy_reflect::TypePath)
-)]
 #[cfg_attr(feature = "bevy_reflect", derive(bevy_reflect::Reflect))]
-#[cfg_attr(feature = "bevy_reflect", reflect(Deserialize))]
+#[cfg_attr(
+    all(feature = "bevy_reflect", feature = "serialize"),
+    reflect(Deserialize)
+)]
 pub struct SdfTree<D: Dim, Shape: Sdf<D>> {
     // TODO: These should probably not be public?
     pub operations: Vec<SdfOperation<D>>,
@@ -131,7 +111,7 @@ impl<D: Dim, Shape: Sdf<D>> Sdf<D> for SdfTree<D, Shape> {
 }
 
 impl<D: Dim, Shape: Sdf<D>> SdfBounding<D> for SdfTree<D, Shape> {
-    fn aabb(&self, translation: D::Position, rotation: D::Rotation) -> D::Aabb {
+    fn aabb(&self, translation: D::Position, rotation: impl Into<D::Rotation>) -> D::Aabb {
         if self.operations.is_empty() {
             self.shapes[0].aabb(translation, rotation)
         } else {
@@ -139,7 +119,7 @@ impl<D: Dim, Shape: Sdf<D>> SdfBounding<D> for SdfTree<D, Shape> {
         }
     }
 
-    fn bounding_ball(&self, translation: D::Position, rotation: D::Rotation) -> D::Ball {
+    fn bounding_ball(&self, translation: D::Position, rotation: impl Into<D::Rotation>) -> D::Ball {
         if self.operations.is_empty() {
             self.shapes[0].bounding_ball(translation, rotation)
         } else {
@@ -263,23 +243,20 @@ pub trait Rotation<Pos> {
     fn rotate(self, other: Self) -> Self;
 }
 
-impl Rotation<bevy_math::Vec2> for f32 {
+impl Rotation<bevy_math::Vec2> for Rot2 {
     fn inverse(self) -> Self {
-        -self
+        self.inverse()
     }
 
     fn apply(self, pos: bevy_math::Vec2) -> bevy_math::Vec2 {
-        let cos = self.cos();
-        let sin = self.sin();
-
         bevy_math::Vec2 {
-            x: pos.x * cos - pos.y * sin,
-            y: pos.y * cos + pos.x * sin,
+            x: pos.x * self.cos - pos.y * self.sin,
+            y: pos.y * self.cos + pos.x * self.sin,
         }
     }
 
     fn rotate(self, other: Self) -> Self {
-        self + other
+        self * other
     }
 }
 
@@ -299,12 +276,11 @@ impl Rotation<bevy_math::Vec3> for bevy_math::Quat {
 
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(
-    all(feature = "bevy_asset", not(feature = "bevy_reflect")),
-    derive(bevy_reflect::TypePath)
-)]
 #[cfg_attr(feature = "bevy_reflect", derive(bevy_reflect::Reflect))]
-#[cfg_attr(feature = "bevy_reflect", reflect(Deserialize))]
+#[cfg_attr(
+    all(feature = "bevy_reflect", feature = "serialize"),
+    reflect(Deserialize)
+)]
 pub struct Index(u8);
 
 impl Index {
@@ -355,7 +331,7 @@ impl Index {
     fn get_aabb<D: Dim>(
         &self,
         translation: D::Position,
-        rotation: D::Rotation,
+        rotation: impl Into<D::Rotation>,
         operations: &[SdfOperation<D>],
         shapes: &[impl Sdf<D>],
     ) -> D::Aabb {
@@ -369,7 +345,7 @@ impl Index {
     fn get_bounding_ball<D: Dim>(
         &self,
         translation: D::Position,
-        rotation: D::Rotation,
+        rotation: impl Into<D::Rotation>,
         operations: &[SdfOperation<D>],
         shapes: &[impl Sdf<D>],
     ) -> D::Ball {
@@ -391,12 +367,11 @@ impl Index {
 
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(
-    all(feature = "bevy_asset", not(feature = "bevy_reflect")),
-    derive(bevy_reflect::TypePath)
-)]
 #[cfg_attr(feature = "bevy_reflect", derive(bevy_reflect::Reflect))]
-#[cfg_attr(feature = "bevy_reflect", reflect(Deserialize))]
+#[cfg_attr(
+    all(feature = "bevy_reflect", feature = "serialize"),
+    reflect(Deserialize)
+)]
 pub enum SdfOperation<D: Dim> {
     Union(Index, Index),
     Invert(Index),
@@ -449,39 +424,45 @@ impl<D: Dim> SdfOperation<D> {
     fn get_aabb(
         &self,
         translation: D::Position,
-        rotation: D::Rotation,
+        rotation: impl Into<D::Rotation>,
         operations: &[Self],
         shapes: &[impl Sdf<D>],
     ) -> D::Aabb {
         use SdfOperation::*;
         match *self {
-            Union(a, b) => a
-                .get_aabb(translation, rotation, operations, shapes)
-                .merge(&b.get_aabb(translation, rotation, operations, shapes)),
+            Union(a, b) => {
+                let rotation = rotation.into();
+                a.get_aabb(translation, rotation, operations, shapes)
+                    .merge(&b.get_aabb(translation, rotation, operations, shapes))
+            }
             Invert(a) => a.get_aabb(translation, rotation, operations, shapes),
             Translate(a, trans) => a.get_aabb(translation + trans, rotation, operations, shapes),
-            Rotate(a, rot) => a.get_aabb(translation, rotation.rotate(rot), operations, shapes),
+            Rotate(a, rot) => {
+                a.get_aabb(translation, rotation.into().rotate(rot), operations, shapes)
+            }
         }
     }
 
     fn get_bounding_ball(
         &self,
         translation: D::Position,
-        rotation: D::Rotation,
+        rotation: impl Into<D::Rotation>,
         operations: &[Self],
         shapes: &[impl Sdf<D>],
     ) -> D::Ball {
         use SdfOperation::*;
         match *self {
-            Union(a, b) => a
-                .get_bounding_ball(translation, rotation, operations, shapes)
-                .merge(&b.get_bounding_ball(translation, rotation, operations, shapes)),
+            Union(a, b) => {
+                let rotation = rotation.into();
+                a.get_bounding_ball(translation, rotation, operations, shapes)
+                    .merge(&b.get_bounding_ball(translation, rotation, operations, shapes))
+            }
             Invert(a) => a.get_bounding_ball(translation, rotation, operations, shapes),
             Translate(a, trans) => {
                 a.get_bounding_ball(translation + trans, rotation, operations, shapes)
             }
             Rotate(a, rot) => {
-                a.get_bounding_ball(translation, rotation.rotate(rot), operations, shapes)
+                a.get_bounding_ball(translation, rotation.into().rotate(rot), operations, shapes)
             }
         }
     }

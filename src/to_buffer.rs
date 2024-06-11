@@ -1,4 +1,37 @@
-use crate::{writable::Writable, Dim, Sdf2dPrimitive, Sdf3dShape, SdfOperation};
+use crate::{writable::Writable, Dim, Sdf2dPrimitive, Sdf3dShape, SdfOperation, SdfShape, SdfTree};
+
+impl<D: Dim, S: SdfShape<D>> SdfTree<D, S> {
+    pub fn to_buffer(&self, buf: &mut Vec<u8>) {
+        buf.reserve_exact(8 + (self.operations.len() + self.shapes.len()) * 8);
+        let mut size = (self.operations.len() + self.shapes.len()) * 2;
+
+        buf.extend((self.operations.len() as u32).to_le_bytes());
+        buf.extend((self.shapes.len() as u32).to_le_bytes());
+
+        for op in self.operations.iter() {
+            buf.extend(op.id().to_le_bytes());
+            buf.extend((size as u32).to_le_bytes());
+
+            size += op.n_values();
+        }
+
+        for shape in self.shapes.iter() {
+            buf.extend(shape.id().to_le_bytes());
+            buf.extend((size as u32).to_le_bytes());
+
+            size += shape.n_values();
+        }
+
+        buf.reserve_exact(size);
+
+        for operation in self.operations.iter() {
+            operation.write_values(buf);
+        }
+        for shape in self.shapes.iter() {
+            shape.write_values(buf);
+        }
+    }
+}
 
 pub trait ValueWriter {
     fn write(&mut self, v: impl Writable);
@@ -80,7 +113,7 @@ impl SdfBuffered for Sdf3dShape {
             Cuboid(_) => 3,
             Extruded(e) => {
                 // TODO: Support 2d sdfs with operations
-                if e.sdf.operations.len() != 0 {
+                if !e.sdf.operations.is_empty() {
                     todo!()
                 }
 
