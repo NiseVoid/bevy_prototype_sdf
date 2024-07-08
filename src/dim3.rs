@@ -59,6 +59,7 @@ pub enum Sdf3dShape {
     Capsule(Capsule3d),
     Cylinder(Cylinder),
     Cuboid(Cuboid),
+    InfinitePlane(InfinitePlane3d),
     Extruded(Extruded<Sdf2d>),
 }
 
@@ -86,6 +87,12 @@ impl From<Cuboid> for Sdf3dShape {
     }
 }
 
+impl From<InfinitePlane3d> for Sdf3dShape {
+    fn from(value: InfinitePlane3d) -> Self {
+        Sdf3dShape::InfinitePlane(value)
+    }
+}
+
 impl From<Extruded<Sdf2d>> for Sdf3dShape {
     fn from(value: Extruded<Sdf2d>) -> Self {
         Sdf3dShape::Extruded(value)
@@ -101,6 +108,7 @@ impl SdfBounding<Dim3> for Sdf3dShape {
             Capsule(c) => c.aabb(translation, rotation),
             Cylinder(c) => c.aabb(translation, rotation),
             Cuboid(b) => b.aabb(translation, rotation),
+            InfinitePlane(p) => p.aabb(translation, rotation),
             Extruded(e) => e.aabb(translation, rotation),
         }
     }
@@ -113,6 +121,7 @@ impl SdfBounding<Dim3> for Sdf3dShape {
             Capsule(c) => c.bounding_ball(translation, rotation),
             Cylinder(c) => c.bounding_ball(translation, rotation),
             Cuboid(b) => b.bounding_ball(translation, rotation),
+            InfinitePlane(b) => b.bounding_ball(translation, rotation),
             Extruded(e) => e.bounding_ball(translation, rotation),
         }
     }
@@ -126,6 +135,7 @@ impl Sdf<Dim3> for Sdf3dShape {
             Capsule(c) => c.distance(pos),
             Cylinder(c) => c.distance(pos),
             Cuboid(b) => b.distance(pos),
+            InfinitePlane(p) => p.distance(pos),
             Extruded(e) => e.distance(pos),
         }
     }
@@ -137,6 +147,7 @@ impl Sdf<Dim3> for Sdf3dShape {
             Capsule(c) => c.gradient(pos),
             Cylinder(c) => c.gradient(pos),
             Cuboid(b) => b.gradient(pos),
+            InfinitePlane(p) => p.gradient(pos),
             Extruded(e) => e.gradient(pos),
         }
     }
@@ -243,6 +254,16 @@ impl Sdf<Dim3> for Cylinder {
             )
             .normalize()
         }
+    }
+}
+
+impl Sdf<Dim3> for InfinitePlane3d {
+    fn distance(&self, pos: Vec3) -> f32 {
+        pos.dot(self.normal.into())
+    }
+
+    fn gradient(&self, _: Vec3) -> Vec3 {
+        self.normal.into()
     }
 }
 

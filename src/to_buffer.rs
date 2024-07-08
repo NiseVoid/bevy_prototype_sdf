@@ -100,7 +100,8 @@ impl SdfBuffered for Sdf3dShape {
             Capsule(_) => 1,
             Cylinder(_) => 2,
             Cuboid(_) => 3,
-            Extruded(_) => 4,
+            InfinitePlane(_) => 4,
+            Extruded(_) => 5,
         }
     }
 
@@ -111,6 +112,7 @@ impl SdfBuffered for Sdf3dShape {
             Capsule(_) => 2,
             Cylinder(_) => 2,
             Cuboid(_) => 3,
+            InfinitePlane(_) => 3,
             Extruded(e) => {
                 // TODO: Support 2d sdfs with operations
                 if !e.sdf.operations.is_empty() {
@@ -138,6 +140,9 @@ impl SdfBuffered for Sdf3dShape {
             }
             Cuboid(b) => {
                 w.write(b.half_size);
+            }
+            InfinitePlane(p) => {
+                w.write(p.normal.as_vec3());
             }
             Extruded(e) => {
                 w.write(e.half_height);
