@@ -248,6 +248,6 @@ impl Bounded2d for Arc {
     fn bounding_circle(&self, translation: Vec2, rotation: impl Into<Rot2>) -> BoundingCircle {
         // TODO: This isn't an optimal bounding circle
         _ = rotation;
-        BoundingCircle::new(translation, self.radius)
+        BoundingCircle::new(translation, self.radius + self.thickness)
     }
 }
