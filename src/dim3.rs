@@ -1,24 +1,21 @@
 use crate::{Dim, Sdf, Sdf2d, SdfBounding, SdfTree};
 
-use bevy_math::{bounding::*, primitives::*, Quat, Vec3};
+use bevy::math::{bounding::*, primitives::*, Quat, Vec3};
+use bevy::reflect::Reflect;
 
-#[cfg(all(feature = "bevy_reflect", feature = "serialize"))]
-use bevy_reflect::ReflectDeserialize;
+#[cfg(feature = "serialize")]
+use bevy::reflect::ReflectDeserialize;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Reflect, Clone, Copy, Debug)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "bevy_reflect", derive(bevy_reflect::Reflect))]
-#[cfg_attr(
-    all(feature = "bevy_reflect", feature = "serialize"),
-    reflect(Deserialize)
-)]
+#[cfg_attr(feature = "serialize", reflect(Deserialize))]
 pub struct Dim3;
 
 impl Dim for Dim3 {
     const POS_SIZE: usize = 2;
     const ROT_SIZE: usize = 4;
-    type Position = bevy_math::Vec3;
-    type Rotation = bevy_math::Quat;
+    type Position = Vec3;
+    type Rotation = Quat;
 
     type Aabb = Aabb3d;
     type Ball = BoundingSphere;
@@ -47,13 +44,9 @@ impl<IntoShape: Into<Sdf3dShape>> From<IntoShape> for Sdf3d {
 }
 
 /// An enum dispatch version of Sdf<Vec3> with support for extruded 2d sdfs
-#[derive(Clone, Debug)]
+#[derive(Reflect, Clone, Debug)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "bevy_reflect", derive(bevy_reflect::Reflect))]
-#[cfg_attr(
-    all(feature = "bevy_reflect", feature = "serialize"),
-    reflect(Deserialize)
-)]
+#[cfg_attr(feature = "serialize", reflect(Deserialize))]
 pub enum Sdf3dShape {
     Sphere(Sphere),
     Capsule(Capsule3d),
@@ -225,7 +218,7 @@ impl Sdf<Dim3> for Cuboid {
 
 impl Sdf<Dim3> for Cylinder {
     fn distance(&self, pos: Vec3) -> f32 {
-        use bevy_math::{Vec2, Vec3Swizzles};
+        use bevy::math::{Vec2, Vec3Swizzles};
         let p2d = pos.xz();
         let l = p2d.length();
         let w = Vec2::new(l, pos.y).abs() - Vec2::new(self.radius, self.half_height);
@@ -233,7 +226,7 @@ impl Sdf<Dim3> for Cylinder {
     }
 
     fn gradient(&self, pos: Vec3) -> Vec3 {
-        use bevy_math::{Vec2, Vec3Swizzles};
+        use bevy::math::{Vec2, Vec3Swizzles};
         let p2d = pos.xz();
         let l = p2d.length();
         let w = Vec2::new(l, pos.y).abs() - Vec2::new(self.radius, self.half_height);
@@ -268,17 +261,13 @@ impl Sdf<Dim3> for InfinitePlane3d {
 }
 
 /// A 2d sdf, extruded into 3D space
-#[derive(Clone, Debug)]
+#[derive(Reflect, Clone, Debug)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(
     feature = "serialize",
     serde(bound(deserialize = "Sdf2d: for<'de2> serde::Deserialize<'de2>"))
 )]
-#[cfg_attr(feature = "bevy_reflect", derive(bevy_reflect::Reflect))]
-#[cfg_attr(
-    all(feature = "bevy_reflect", feature = "serialize"),
-    reflect(Deserialize)
-)]
+#[cfg_attr(feature = "serialize", reflect(Deserialize))]
 pub struct Extruded<Sdf2d: Sdf<super::dim2::Dim2>> {
     /// The 2D sdf used
     pub sdf: Sdf2d,
@@ -298,7 +287,7 @@ impl super::dim2::Sdf2d {
 impl<Sdf2d: Sdf<super::dim2::Dim2>> SdfBounding<Dim3> for Extruded<Sdf2d> {
     fn aabb(&self, translation: Vec3, rotation: impl Into<Quat>) -> Aabb3d {
         let rotation = rotation.into();
-        use bevy_math::{Mat3, Vec2};
+        use bevy::math::{Mat3, Vec2};
         let rect = self.sdf.aabb(Vec2::ZERO, 0.);
         let rect_size = rect.half_size();
 
@@ -320,7 +309,7 @@ impl<Sdf2d: Sdf<super::dim2::Dim2>> SdfBounding<Dim3> for Extruded<Sdf2d> {
 
     fn bounding_ball(&self, translation: Vec3, rotation: impl Into<Quat>) -> BoundingSphere {
         let rotation = rotation.into();
-        use bevy_math::Vec2;
+        use bevy::math::Vec2;
         let circle = self.sdf.bounding_ball(Vec2::ZERO, 0.);
 
         let radius = circle.radius().hypot(self.half_height);
@@ -336,7 +325,7 @@ impl<Sdf2d: Sdf<super::dim2::Dim2>> SdfBounding<Dim3> for Extruded<Sdf2d> {
 
 impl<Sdf2d: Sdf<super::dim2::Dim2>> Sdf<Dim3> for Extruded<Sdf2d> {
     fn distance(&self, pos: Vec3) -> f32 {
-        use bevy_math::Vec2;
+        use bevy::math::Vec2;
         let d = self.sdf.distance(Vec2::new(pos.x, pos.z));
 
         let w = Vec2::new(d, pos.y.abs() - self.half_height);
@@ -344,7 +333,7 @@ impl<Sdf2d: Sdf<super::dim2::Dim2>> Sdf<Dim3> for Extruded<Sdf2d> {
     }
 
     fn gradient(&self, pos: Vec3) -> Vec3 {
-        use bevy_math::Vec2;
+        use bevy::math::Vec2;
         let d = self.sdf.distance(Vec2::new(pos.x, pos.z));
         let grad = self.sdf.gradient(Vec2::new(pos.x, pos.z));
 

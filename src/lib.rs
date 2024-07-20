@@ -1,5 +1,3 @@
-use bevy_math::{bounding::*, *};
-
 pub mod dim2;
 pub mod dim3;
 
@@ -10,8 +8,34 @@ mod to_buffer;
 pub use dim2::{Arc, Sdf2d, Sdf2dPrimitive};
 pub use dim3::{Sdf3d, Sdf3dShape};
 
-#[cfg(all(feature = "bevy_reflect", feature = "serialize"))]
-use bevy_reflect::ReflectDeserialize;
+use bevy::{math::bounding::*, prelude::*};
+
+pub struct SdfPlugin;
+
+impl Plugin for SdfPlugin {
+    fn build(&self, app: &mut App) {
+        #[cfg(feature = "bevy_asset")]
+        app.init_asset::<Sdf3d>().init_asset::<Sdf2d>();
+
+        #[cfg(feature = "shader")]
+        {
+            bevy::asset::embedded_asset!(app, "sdf.wgsl");
+            std::mem::forget(
+                app.world()
+                    .resource::<AssetServer>()
+                    .load::<Shader>("embedded://bevy_prototype_sdf/sdf.wgsl"),
+            );
+        }
+
+        app.register_type::<Sdf2d>()
+            .register_type::<Sdf2dPrimitive>()
+            .register_type::<Sdf3d>()
+            .register_type::<Sdf3dShape>();
+    }
+}
+
+#[cfg(feature = "serialize")]
+use bevy::reflect::ReflectDeserialize;
 
 #[cfg(not(feature = "serialize"))]
 pub trait ConditionalSerialize {}
@@ -25,39 +49,15 @@ pub trait ConditionalSerialize: serde::Serialize + for<'de> serde::Deserialize<'
 #[cfg(feature = "serialize")]
 impl<T: serde::Serialize + for<'de> serde::Deserialize<'de>> ConditionalSerialize for T {}
 
-#[cfg(not(feature = "bevy_reflect"))]
-pub trait ConditionalBevyReflect {}
-
-#[cfg(not(feature = "bevy_reflect"))]
-impl<T> ConditionalBevyReflect for T {}
-
-#[cfg(feature = "bevy_reflect")]
-pub trait ConditionalBevyReflect:
-    bevy_reflect::Reflect
-    + bevy_reflect::FromReflect
-    + bevy_reflect::TypePath
-    + bevy_reflect::GetTypeRegistration
+pub trait BevyReflect:
+    Reflect + FromReflect + TypePath + bevy::reflect::GetTypeRegistration
 {
 }
 
-#[cfg(feature = "bevy_reflect")]
-impl<
-        T: bevy_reflect::Reflect
-            + bevy_reflect::FromReflect
-            + bevy_reflect::TypePath
-            + bevy_reflect::GetTypeRegistration,
-    > ConditionalBevyReflect for T
-{
-}
+impl<T: Reflect + FromReflect + TypePath + bevy::reflect::GetTypeRegistration> BevyReflect for T {}
 
 pub trait Sdf<D: Dim>:
-    SdfBounding<D>
-    + Clone
-    + Sync
-    + Send
-    + std::fmt::Debug
-    + ConditionalSerialize
-    + ConditionalBevyReflect
+    SdfBounding<D> + Clone + Sync + Send + std::fmt::Debug + ConditionalSerialize + BevyReflect
 {
     fn distance(&self, pos: D::Position) -> f32;
     fn gradient(&self, pos: D::Position) -> D::Position;
@@ -72,7 +72,7 @@ pub trait SdfShape<D: Dim>: Sdf<D> + to_buffer::SdfBuffered {}
 
 impl<D: Dim, T: Sdf<D> + to_buffer::SdfBuffered> SdfShape<D> for T {}
 
-#[derive(Clone, Debug)]
+#[derive(Reflect, Clone, Debug)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(
     feature = "serialize",
@@ -80,12 +80,8 @@ impl<D: Dim, T: Sdf<D> + to_buffer::SdfBuffered> SdfShape<D> for T {}
         deserialize = "D: for<'de2> serde::Deserialize<'de2>, Shape: for<'de2> serde::Deserialize<'de2>"
     ))
 )]
-#[cfg_attr(feature = "bevy_asset", derive(bevy_asset::Asset))]
-#[cfg_attr(feature = "bevy_reflect", derive(bevy_reflect::Reflect))]
-#[cfg_attr(
-    all(feature = "bevy_reflect", feature = "serialize"),
-    reflect(Deserialize)
-)]
+#[cfg_attr(feature = "bevy_asset", derive(Asset))]
+#[cfg_attr(feature = "serialize", reflect(Deserialize))]
 pub struct SdfTree<D: Dim, Shape: Sdf<D>> {
     // TODO: These should probably not be public?
     pub operations: Vec<SdfOperation<D>>,
@@ -163,8 +159,7 @@ impl<D: Dim, Shape: Sdf<D>> SdfTree<D, Shape> {
         let op_offset = a.operations.len();
         let shape_offset = a.operations.len();
         let operations = [start]
-            .iter()
-            .cloned()
+            .into_iter()
             .chain(a.operations.iter().map(|op| op.fix(1, 0)))
             .chain(
                 b.operations
@@ -208,7 +203,7 @@ impl<D: Dim, Shape: Sdf<D>> SdfTree<D, Shape> {
 }
 
 pub trait Dim:
-    Clone + Copy + Sync + Send + std::fmt::Debug + ConditionalSerialize + ConditionalBevyReflect
+    Clone + Copy + Sync + Send + std::fmt::Debug + ConditionalSerialize + BevyReflect
 {
     const POS_SIZE: usize;
     const ROT_SIZE: usize;
@@ -222,7 +217,7 @@ pub trait Dim:
         + std::ops::Neg<Output = Self::Position>
         + writable::Writable
         + ConditionalSerialize
-        + ConditionalBevyReflect;
+        + BevyReflect;
     type Rotation: Clone
         + Copy
         + Sync
@@ -231,7 +226,7 @@ pub trait Dim:
         + Rotation<Self::Position>
         + writable::Writable
         + ConditionalSerialize
-        + ConditionalBevyReflect;
+        + BevyReflect;
 
     type Aabb: BoundingVolume;
     type Ball: BoundingVolume;
@@ -243,13 +238,13 @@ pub trait Rotation<Pos> {
     fn rotate(self, other: Self) -> Self;
 }
 
-impl Rotation<bevy_math::Vec2> for Rot2 {
+impl Rotation<Vec2> for Rot2 {
     fn inverse(self) -> Self {
         self.inverse()
     }
 
-    fn apply(self, pos: bevy_math::Vec2) -> bevy_math::Vec2 {
-        bevy_math::Vec2 {
+    fn apply(self, pos: Vec2) -> Vec2 {
+        Vec2 {
             x: pos.x * self.cos - pos.y * self.sin,
             y: pos.y * self.cos + pos.x * self.sin,
         }
@@ -260,12 +255,12 @@ impl Rotation<bevy_math::Vec2> for Rot2 {
     }
 }
 
-impl Rotation<bevy_math::Vec3> for bevy_math::Quat {
+impl Rotation<Vec3> for Quat {
     fn inverse(self) -> Self {
         self.inverse()
     }
 
-    fn apply(self, pos: bevy_math::Vec3) -> bevy_math::Vec3 {
+    fn apply(self, pos: Vec3) -> Vec3 {
         self * pos
     }
 
@@ -274,13 +269,9 @@ impl Rotation<bevy_math::Vec3> for bevy_math::Quat {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Reflect, Clone, Copy, Debug)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "bevy_reflect", derive(bevy_reflect::Reflect))]
-#[cfg_attr(
-    all(feature = "bevy_reflect", feature = "serialize"),
-    reflect(Deserialize)
-)]
+#[cfg_attr(feature = "serialize", reflect(Deserialize))]
 pub struct Index(u8);
 
 impl Index {
@@ -365,13 +356,9 @@ impl Index {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Reflect, Clone, Copy, Debug)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "bevy_reflect", derive(bevy_reflect::Reflect))]
-#[cfg_attr(
-    all(feature = "bevy_reflect", feature = "serialize"),
-    reflect(Deserialize)
-)]
+#[cfg_attr(feature = "serialize", reflect(Deserialize))]
 pub enum SdfOperation<D: Dim> {
     Union(Index, Index),
     Invert(Index),

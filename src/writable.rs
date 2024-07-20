@@ -1,4 +1,4 @@
-use bevy_math::{Quat, Rot2, Vec2, Vec3};
+use bevy::math::{Quat, Rot2, Vec2, Vec3};
 
 pub trait Writable {
     fn as_bytes(&self, w: &mut Vec<u8>);

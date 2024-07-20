@@ -1,23 +1,20 @@
 use crate::{Dim, Sdf, SdfBounding, SdfTree};
 
-use bevy_math::{bounding::*, primitives::*, Rot2, Vec2};
+use bevy::math::{bounding::*, primitives::*, Rot2, Vec2};
+use bevy::reflect::Reflect;
 
-#[cfg(all(feature = "bevy_reflect", feature = "serialize"))]
-use bevy_reflect::ReflectDeserialize;
+#[cfg(feature = "serialize")]
+use bevy::reflect::ReflectDeserialize;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Reflect, Clone, Copy, Debug)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "bevy_reflect", derive(bevy_reflect::Reflect))]
-#[cfg_attr(
-    all(feature = "bevy_reflect", feature = "serialize"),
-    reflect(Deserialize)
-)]
+#[cfg_attr(feature = "serialize", reflect(Deserialize))]
 pub struct Dim2;
 
 impl Dim for Dim2 {
     const POS_SIZE: usize = 2;
     const ROT_SIZE: usize = 1;
-    type Position = bevy_math::Vec2;
+    type Position = Vec2;
     type Rotation = Rot2;
 
     type Aabb = Aabb2d;
@@ -46,13 +43,9 @@ impl<IntoShape: Into<Sdf2dPrimitive>> From<IntoShape> for Sdf2d {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Reflect, Clone, Copy, Debug)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "bevy_reflect", derive(bevy_reflect::Reflect))]
-#[cfg_attr(
-    all(feature = "bevy_reflect", feature = "serialize"),
-    reflect(Deserialize)
-)]
+#[cfg_attr(feature = "serialize", reflect(Deserialize))]
 pub enum Sdf2dPrimitive {
     Circle(Circle),
     // Triangle(Triangle2d),
@@ -172,13 +165,9 @@ impl Sdf<Dim2> for Rectangle {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Reflect, Clone, Copy, Debug)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "bevy_reflect", derive(bevy_reflect::Reflect))]
-#[cfg_attr(
-    all(feature = "bevy_reflect", feature = "serialize"),
-    reflect(Deserialize)
-)]
+#[cfg_attr(feature = "serialize", reflect(Deserialize))]
 pub struct Arc {
     pub radius: f32,
     pub thickness: f32,
