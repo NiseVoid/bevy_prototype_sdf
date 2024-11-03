@@ -1,6 +1,6 @@
 use crate::{Dim, Sdf, SdfBounding, SdfTree};
 
-use bevy::math::{bounding::*, primitives::*, Rot2, Vec2};
+use bevy::math::{bounding::*, primitives::*, Isometry2d, Rot2, Vec2};
 use bevy::reflect::Reflect;
 
 #[cfg(feature = "serialize")]
@@ -16,18 +16,19 @@ impl Dim for Dim2 {
     const ROT_SIZE: usize = 1;
     type Position = Vec2;
     type Rotation = Rot2;
+    type Isometry = Isometry2d;
 
     type Aabb = Aabb2d;
     type Ball = BoundingCircle;
 }
 
 impl<P: Sdf<Dim2> + Bounded2d> SdfBounding<Dim2> for P {
-    fn aabb(&self, translation: Vec2, rotation: impl Into<Rot2>) -> Aabb2d {
-        self.aabb_2d(translation, rotation)
+    fn aabb(&self, iso: Isometry2d) -> Aabb2d {
+        self.aabb_2d(iso)
     }
 
-    fn bounding_ball(&self, translation: Vec2, rotation: impl Into<Rot2>) -> BoundingCircle {
-        self.bounding_circle(translation, rotation)
+    fn bounding_ball(&self, iso: Isometry2d) -> BoundingCircle {
+        self.bounding_circle(iso)
     }
 }
 
@@ -78,23 +79,23 @@ impl From<Arc> for Sdf2dPrimitive {
 }
 
 impl SdfBounding<Dim2> for Sdf2dPrimitive {
-    fn aabb(&self, translation: Vec2, rotation: impl Into<Rot2>) -> Aabb2d {
+    fn aabb(&self, iso: Isometry2d) -> Aabb2d {
         use Sdf2dPrimitive::*;
         match self {
-            Circle(c) => c.aabb_2d(translation, rotation),
-            // Triangle(t) => t.aabb_2d(translation, rotation),
-            Rectangle(r) => r.aabb_2d(translation, rotation),
-            Arc(a) => a.aabb(translation, rotation),
+            Circle(c) => c.aabb_2d(iso),
+            // Triangle(t) => t.aabb_2d(iso),
+            Rectangle(r) => r.aabb_2d(iso),
+            Arc(a) => a.aabb(iso),
         }
     }
 
-    fn bounding_ball(&self, translation: Vec2, rotation: impl Into<Rot2>) -> BoundingCircle {
+    fn bounding_ball(&self, iso: Isometry2d) -> BoundingCircle {
         use Sdf2dPrimitive::*;
         match self {
-            Circle(c) => c.bounding_circle(translation, rotation),
-            // Triangle(t) => t.bounding_circle(translation, rotation),
-            Rectangle(r) => r.bounding_circle(translation, rotation),
-            Arc(a) => a.bounding_ball(translation, rotation),
+            Circle(c) => c.bounding_circle(iso),
+            // Triangle(t) => t.bounding_circle(iso),
+            Rectangle(r) => r.bounding_circle(iso),
+            Arc(a) => a.bounding_ball(iso),
         }
     }
 }
@@ -218,9 +219,9 @@ impl Sdf<Dim2> for Arc {
 }
 
 impl Bounded2d for Arc {
-    fn aabb_2d(&self, translation: Vec2, rotation: impl Into<Rot2>) -> Aabb2d {
+    fn aabb_2d(&self, iso: impl Into<Isometry2d>) -> Aabb2d {
+        let iso = iso.into();
         // TODO
-        _ = rotation;
         let r = self.radius + self.thickness;
         let half_width = if self.segment < std::f32::consts::PI / 2. {
             self.radius * self.segment.sin() + self.thickness
@@ -229,14 +230,14 @@ impl Bounded2d for Arc {
         };
         let bottom = self.segment.cos() * self.radius - self.thickness;
         Aabb2d {
-            min: Vec2::new(-half_width, bottom) + translation,
-            max: Vec2::new(half_width, r) + translation,
+            min: Vec2::new(-half_width, bottom) + iso.translation,
+            max: Vec2::new(half_width, r) + iso.translation,
         }
     }
 
-    fn bounding_circle(&self, translation: Vec2, rotation: impl Into<Rot2>) -> BoundingCircle {
+    fn bounding_circle(&self, iso: impl Into<Isometry2d>) -> BoundingCircle {
+        let iso = iso.into();
         // TODO: This isn't an optimal bounding circle
-        _ = rotation;
-        BoundingCircle::new(translation, self.radius + self.thickness)
+        BoundingCircle::new(iso.translation, self.radius + self.thickness)
     }
 }

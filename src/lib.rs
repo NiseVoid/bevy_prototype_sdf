@@ -8,7 +8,11 @@ mod to_buffer;
 pub use dim2::{Arc, Sdf2d, Sdf2dPrimitive};
 pub use dim3::{Sdf3d, Sdf3dShape};
 
-use bevy::{math::bounding::*, prelude::*};
+use bevy::{
+    math::bounding::*,
+    prelude::*,
+    reflect::{GetTypeRegistration, Typed},
+};
 
 pub struct SdfPlugin;
 
@@ -49,12 +53,9 @@ pub trait ConditionalSerialize: serde::Serialize + for<'de> serde::Deserialize<'
 #[cfg(feature = "serialize")]
 impl<T: serde::Serialize + for<'de> serde::Deserialize<'de>> ConditionalSerialize for T {}
 
-pub trait BevyReflect:
-    Reflect + FromReflect + TypePath + bevy::reflect::GetTypeRegistration
-{
-}
+pub trait BevyReflect: Reflect + FromReflect + TypePath + GetTypeRegistration + Typed {}
 
-impl<T: Reflect + FromReflect + TypePath + bevy::reflect::GetTypeRegistration> BevyReflect for T {}
+impl<T: Reflect + FromReflect + TypePath + GetTypeRegistration + Typed> BevyReflect for T {}
 
 pub trait Sdf<D: Dim>:
     SdfBounding<D> + Clone + Sync + Send + std::fmt::Debug + ConditionalSerialize + BevyReflect
@@ -64,8 +65,8 @@ pub trait Sdf<D: Dim>:
 }
 
 pub trait SdfBounding<D: Dim> {
-    fn aabb(&self, translation: D::Position, rotation: impl Into<D::Rotation>) -> D::Aabb;
-    fn bounding_ball(&self, translation: D::Position, rotation: impl Into<D::Rotation>) -> D::Ball;
+    fn aabb(&self, iso: D::Isometry) -> D::Aabb;
+    fn bounding_ball(&self, iso: D::Isometry) -> D::Ball;
 }
 
 pub trait SdfShape<D: Dim>: Sdf<D> + to_buffer::SdfBuffered {}
@@ -107,24 +108,19 @@ impl<D: Dim, Shape: Sdf<D>> Sdf<D> for SdfTree<D, Shape> {
 }
 
 impl<D: Dim, Shape: Sdf<D>> SdfBounding<D> for SdfTree<D, Shape> {
-    fn aabb(&self, translation: D::Position, rotation: impl Into<D::Rotation>) -> D::Aabb {
+    fn aabb(&self, iso: D::Isometry) -> D::Aabb {
         if self.operations.is_empty() {
-            self.shapes[0].aabb(translation, rotation)
+            self.shapes[0].aabb(iso)
         } else {
-            self.operations[0].get_aabb(translation, rotation, &self.operations, &self.shapes)
+            self.operations[0].get_aabb(iso, &self.operations, &self.shapes)
         }
     }
 
-    fn bounding_ball(&self, translation: D::Position, rotation: impl Into<D::Rotation>) -> D::Ball {
+    fn bounding_ball(&self, iso: D::Isometry) -> D::Ball {
         if self.operations.is_empty() {
-            self.shapes[0].bounding_ball(translation, rotation)
+            self.shapes[0].bounding_ball(iso)
         } else {
-            self.operations[0].get_bounding_ball(
-                translation,
-                rotation,
-                &self.operations,
-                &self.shapes,
-            )
+            self.operations[0].get_bounding_ball(iso, &self.operations, &self.shapes)
         }
     }
 }
@@ -227,9 +223,55 @@ pub trait Dim:
         + writable::Writable
         + ConditionalSerialize
         + BevyReflect;
+    type Isometry: Clone
+        + Copy
+        + Sync
+        + Send
+        + std::fmt::Debug
+        + BevyReflect
+        + std::ops::Mul<Self::Position>
+        + Isometry<Self::Position, Self::Rotation>;
 
     type Aabb: BoundingVolume;
     type Ball: BoundingVolume;
+}
+
+pub trait Isometry<Pos, Rot> {
+    fn translate(self, trans: Pos) -> Self;
+    fn rotate(self, rot: Rot) -> Self;
+}
+
+impl Isometry<Vec3, Quat> for Isometry3d {
+    fn translate(self, trans: Vec3) -> Self {
+        Self {
+            rotation: self.rotation,
+            translation: self.translation
+                + self.rotation.inverse() * bevy::math::Vec3A::from(trans),
+        }
+    }
+
+    fn rotate(self, rot: Quat) -> Self {
+        Self {
+            rotation: rot * self.rotation,
+            translation: self.translation,
+        }
+    }
+}
+
+impl Isometry<Vec2, Rot2> for Isometry2d {
+    fn translate(self, trans: Vec2) -> Self {
+        Self {
+            rotation: self.rotation,
+            translation: self.translation + self.rotation.inverse() * trans,
+        }
+    }
+
+    fn rotate(self, rot: Rot2) -> Self {
+        Self {
+            rotation: rot * self.rotation,
+            translation: self.translation,
+        }
+    }
 }
 
 pub trait Rotation<Pos> {
@@ -321,29 +363,27 @@ impl Index {
 
     fn get_aabb<D: Dim>(
         &self,
-        translation: D::Position,
-        rotation: impl Into<D::Rotation>,
+        iso: D::Isometry,
         operations: &[SdfOperation<D>],
         shapes: &[impl Sdf<D>],
     ) -> D::Aabb {
         let idx = (self.0 & 0b0111_1111) as usize;
         match self.0 & 0b1000_0000 {
-            0 => shapes[idx].aabb(translation, rotation),
-            _ => operations[idx].get_aabb(translation, rotation, operations, shapes),
+            0 => shapes[idx].aabb(iso),
+            _ => operations[idx].get_aabb(iso, operations, shapes),
         }
     }
 
     fn get_bounding_ball<D: Dim>(
         &self,
-        translation: D::Position,
-        rotation: impl Into<D::Rotation>,
+        iso: D::Isometry,
         operations: &[SdfOperation<D>],
         shapes: &[impl Sdf<D>],
     ) -> D::Ball {
         let idx = (self.0 & 0b0111_1111) as usize;
         match self.0 & 0b1000_0000 {
-            0 => shapes[idx].bounding_ball(translation, rotation),
-            _ => operations[idx].get_bounding_ball(translation, rotation, operations, shapes),
+            0 => shapes[idx].bounding_ball(iso),
+            _ => operations[idx].get_bounding_ball(iso, operations, shapes),
         }
     }
 
@@ -408,49 +448,32 @@ impl<D: Dim> SdfOperation<D> {
         }
     }
 
-    fn get_aabb(
-        &self,
-        translation: D::Position,
-        rotation: impl Into<D::Rotation>,
-        operations: &[Self],
-        shapes: &[impl Sdf<D>],
-    ) -> D::Aabb {
+    fn get_aabb(&self, iso: D::Isometry, operations: &[Self], shapes: &[impl Sdf<D>]) -> D::Aabb {
         use SdfOperation::*;
         match *self {
-            Union(a, b) => {
-                let rotation = rotation.into();
-                a.get_aabb(translation, rotation, operations, shapes)
-                    .merge(&b.get_aabb(translation, rotation, operations, shapes))
-            }
-            Invert(a) => a.get_aabb(translation, rotation, operations, shapes),
-            Translate(a, trans) => a.get_aabb(translation + trans, rotation, operations, shapes),
-            Rotate(a, rot) => {
-                a.get_aabb(translation, rotation.into().rotate(rot), operations, shapes)
-            }
+            Union(a, b) => a
+                .get_aabb(iso, operations, shapes)
+                .merge(&b.get_aabb(iso, operations, shapes)),
+            Invert(a) => a.get_aabb(iso, operations, shapes),
+            Translate(a, trans) => a.get_aabb(iso.translate(trans), operations, shapes),
+            Rotate(a, rot) => a.get_aabb(iso.rotate(rot), operations, shapes),
         }
     }
 
     fn get_bounding_ball(
         &self,
-        translation: D::Position,
-        rotation: impl Into<D::Rotation>,
+        iso: D::Isometry,
         operations: &[Self],
         shapes: &[impl Sdf<D>],
     ) -> D::Ball {
         use SdfOperation::*;
         match *self {
-            Union(a, b) => {
-                let rotation = rotation.into();
-                a.get_bounding_ball(translation, rotation, operations, shapes)
-                    .merge(&b.get_bounding_ball(translation, rotation, operations, shapes))
-            }
-            Invert(a) => a.get_bounding_ball(translation, rotation, operations, shapes),
-            Translate(a, trans) => {
-                a.get_bounding_ball(translation + trans, rotation, operations, shapes)
-            }
-            Rotate(a, rot) => {
-                a.get_bounding_ball(translation, rotation.into().rotate(rot), operations, shapes)
-            }
+            Union(a, b) => a
+                .get_bounding_ball(iso, operations, shapes)
+                .merge(&b.get_bounding_ball(iso, operations, shapes)),
+            Invert(a) => a.get_bounding_ball(iso, operations, shapes),
+            Translate(a, trans) => a.get_bounding_ball(iso.translate(trans), operations, shapes),
+            Rotate(a, rot) => a.get_bounding_ball(iso.rotate(rot), operations, shapes),
         }
     }
 

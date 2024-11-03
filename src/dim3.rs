@@ -1,6 +1,6 @@
 use crate::{Dim, Sdf, Sdf2d, SdfBounding, SdfTree};
 
-use bevy::math::{bounding::*, primitives::*, Quat, Vec3};
+use bevy::math::{bounding::*, primitives::*, Isometry3d, Quat, Vec3, Vec3A};
 use bevy::reflect::Reflect;
 
 #[cfg(feature = "serialize")]
@@ -16,18 +16,19 @@ impl Dim for Dim3 {
     const ROT_SIZE: usize = 4;
     type Position = Vec3;
     type Rotation = Quat;
+    type Isometry = Isometry3d;
 
     type Aabb = Aabb3d;
     type Ball = BoundingSphere;
 }
 
 impl<P: Sdf<Dim3> + Bounded3d> SdfBounding<Dim3> for P {
-    fn aabb(&self, translation: Vec3, rotation: impl Into<Quat>) -> Aabb3d {
-        self.aabb_3d(translation, rotation.into())
+    fn aabb(&self, iso: Isometry3d) -> Aabb3d {
+        self.aabb_3d(iso)
     }
 
-    fn bounding_ball(&self, translation: Vec3, rotation: impl Into<Quat>) -> BoundingSphere {
-        self.bounding_sphere(translation, rotation.into())
+    fn bounding_ball(&self, iso: Isometry3d) -> BoundingSphere {
+        self.bounding_sphere(iso)
     }
 }
 
@@ -93,29 +94,27 @@ impl From<Extruded<Sdf2d>> for Sdf3dShape {
 }
 
 impl SdfBounding<Dim3> for Sdf3dShape {
-    fn aabb(&self, translation: Vec3, rotation: impl Into<Quat>) -> Aabb3d {
-        let rotation = rotation.into();
+    fn aabb(&self, iso: Isometry3d) -> Aabb3d {
         use Sdf3dShape::*;
         match self {
-            Sphere(s) => s.aabb(translation, rotation),
-            Capsule(c) => c.aabb(translation, rotation),
-            Cylinder(c) => c.aabb(translation, rotation),
-            Cuboid(b) => b.aabb(translation, rotation),
-            InfinitePlane(p) => p.aabb(translation, rotation),
-            Extruded(e) => e.aabb(translation, rotation),
+            Sphere(s) => s.aabb(iso),
+            Capsule(c) => c.aabb(iso),
+            Cylinder(c) => c.aabb(iso),
+            Cuboid(b) => b.aabb(iso),
+            InfinitePlane(p) => p.aabb(iso),
+            Extruded(e) => e.aabb(iso),
         }
     }
 
-    fn bounding_ball(&self, translation: Vec3, rotation: impl Into<Quat>) -> BoundingSphere {
-        let rotation = rotation.into();
+    fn bounding_ball(&self, iso: Isometry3d) -> BoundingSphere {
         use Sdf3dShape::*;
         match self {
-            Sphere(s) => s.bounding_ball(translation, rotation),
-            Capsule(c) => c.bounding_ball(translation, rotation),
-            Cylinder(c) => c.bounding_ball(translation, rotation),
-            Cuboid(b) => b.bounding_ball(translation, rotation),
-            InfinitePlane(b) => b.bounding_ball(translation, rotation),
-            Extruded(e) => e.bounding_ball(translation, rotation),
+            Sphere(s) => s.bounding_ball(iso),
+            Capsule(c) => c.bounding_ball(iso),
+            Cylinder(c) => c.bounding_ball(iso),
+            Cuboid(b) => b.bounding_ball(iso),
+            InfinitePlane(b) => b.bounding_ball(iso),
+            Extruded(e) => e.bounding_ball(iso),
         }
     }
 }
@@ -285,41 +284,39 @@ impl super::dim2::Sdf2d {
 }
 
 impl<Sdf2d: Sdf<super::dim2::Dim2>> SdfBounding<Dim3> for Extruded<Sdf2d> {
-    fn aabb(&self, translation: Vec3, rotation: impl Into<Quat>) -> Aabb3d {
-        let rotation = rotation.into();
+    fn aabb(&self, iso: Isometry3d) -> Aabb3d {
         use bevy::math::{Mat3, Vec2};
-        let rect = self.sdf.aabb(Vec2::ZERO, 0.);
+        let rect = self.sdf.aabb(bevy::math::Isometry2d::default());
         let rect_size = rect.half_size();
 
-        let rot_mat = Mat3::from_quat(rotation);
+        let rot_mat = Mat3::from_quat(iso.rotation);
         let abs_rot_mat = Mat3::from_cols(
             rot_mat.x_axis.abs(),
             rot_mat.y_axis.abs(),
             rot_mat.z_axis.abs(),
         );
-        let half_size = abs_rot_mat * Vec3::new(rect_size.x, self.half_height, rect_size.y);
+        let half_size = abs_rot_mat * Vec3A::new(rect_size.x, self.half_height, rect_size.y);
 
-        let mut offset = translation;
+        let mut offset = iso.translation;
         let rect_center = rect.center();
         if rect_center != Vec2::ZERO {
-            offset += rotation * Vec3::new(rect_center.x, 0., rect_center.y);
+            offset += rot_mat * Vec3A::new(rect_center.x, 0., rect_center.y);
         }
         Aabb3d::new(offset, half_size)
     }
 
-    fn bounding_ball(&self, translation: Vec3, rotation: impl Into<Quat>) -> BoundingSphere {
-        let rotation = rotation.into();
+    fn bounding_ball(&self, iso: Isometry3d) -> BoundingSphere {
         use bevy::math::Vec2;
-        let circle = self.sdf.bounding_ball(Vec2::ZERO, 0.);
+        let circle = self.sdf.bounding_ball(bevy::math::Isometry2d::default());
 
         let radius = circle.radius().hypot(self.half_height);
 
-        let mut offset = translation;
+        let mut offset = iso.translation;
         let rect_center = circle.center();
         if rect_center != Vec2::ZERO {
-            offset += rotation * Vec3::new(rect_center.x, 0., rect_center.y);
+            offset += iso.rotation * Vec3A::new(rect_center.x, 0., rect_center.y);
         }
-        BoundingSphere::new(translation, radius)
+        BoundingSphere::new(offset, radius)
     }
 }
 
