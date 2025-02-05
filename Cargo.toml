@@ -4,11 +4,17 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["serialize", "bevy_asset"]
-serialize = ["dep:serde", "bevy/serialize"]
-bevy_asset = ["bevy/bevy_asset"]
+default = ["bevy_asset"]
+serialize = ["dep:serde"]
+bevy_asset = ["bevy/bevy_asset", "serialize"]
 shader = ["bevy/bevy_render", "bevy/bevy_asset"]
 
 [dependencies]
 bevy = {version = "0.15.0-rc", default-features=false}
 serde = {version = "1.0", features=["serde_derive"], optional = true}
+arrayvec = {version = "0.7", default-features=false}
+thiserror = {version = "2.0", default-features = false}
+ron = "0.8"
+
+[dev-dependencies]
+bincode = "1.3"
