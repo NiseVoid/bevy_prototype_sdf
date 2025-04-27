@@ -1,6 +1,6 @@
 # bevy_prototype_sdf
 
-A crate for defining and using trees of signed distance primitives and operations.
+An experimental crate for defining and using trees of signed distance primitives and operations.
 
 ## Goals
 
@@ -8,8 +8,7 @@ A crate for defining and using trees of signed distance primitives and operation
 
 ## Current limitations
 
-Not many shapes are currently supported, and the data structure is sub-optimal for serialization.
-The plan is to switch to a structure that always stores the tree as if it were serialized, and read from it directly while performing operations.
+Not many shapes are currently supported. Execution orders aren't optimized in any way yet.
 
 ## License
 

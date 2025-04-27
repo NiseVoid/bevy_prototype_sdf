@@ -1,7 +1,9 @@
+#![no_std]
+
 pub mod dim2;
 pub mod dim3;
 
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 
 use arrayvec::ArrayVec;
 pub use dim2::{Arc, Sdf2d};
@@ -48,7 +50,7 @@ impl Plugin for SdfPlugin {
         #[cfg(feature = "shader")]
         {
             bevy::asset::embedded_asset!(app, "sdf.wgsl");
-            std::mem::forget(
+            core::mem::forget(
                 app.world()
                     .resource::<AssetServer>()
                     .load::<Shader>("embedded://bevy_prototype_sdf/sdf.wgsl"),
@@ -66,6 +68,9 @@ impl<D: Dim> Default for SdfAssetLoader<D> {
         Self(PhantomData)
     }
 }
+
+#[cfg(feature = "bevy_asset")]
+extern crate std;
 
 /// Possible errors that can be produced by [`SdfAssetLoader`]
 #[cfg(feature = "bevy_asset")]
@@ -112,7 +117,7 @@ pub trait BevyReflect: Reflect + FromReflect + TypePath + GetTypeRegistration + 
 impl<T: Reflect + FromReflect + TypePath + GetTypeRegistration + Typed> BevyReflect for T {}
 
 pub trait Sdf<D: Dim>:
-    SdfBounding<D> + Clone + Sync + Send + std::fmt::Debug + BevyReflect
+    SdfBounding<D> + Clone + Sync + Send + core::fmt::Debug + BevyReflect
 {
     fn distance(&self, pos: D::Position) -> f32;
     fn gradient(&self, pos: D::Position) -> D::Position;
@@ -523,11 +528,11 @@ impl<'de, Di: Dim> serde::Deserialize<'de> for RawSerdeTree<Di> {
             Data,
         }
 
-        struct StructVisitor<Di: Dim>(std::marker::PhantomData<Di>);
+        struct StructVisitor<Di: Dim>(core::marker::PhantomData<Di>);
         impl<'de3, Di: Dim> serde::de::Visitor<'de3> for StructVisitor<Di> {
             type Value = SdfTree<Di>;
 
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            fn expecting(&self, formatter: &mut core::fmt::Formatter) -> core::fmt::Result {
                 formatter.write_str("struct SdfTree")
             }
 
@@ -584,7 +589,7 @@ impl<'de, Di: Dim> serde::Deserialize<'de> for RawSerdeTree<Di> {
         let tree = deserializer.deserialize_struct(
             "SdfTree",
             &["nodes", "data"],
-            StructVisitor(std::marker::PhantomData::<Di>),
+            StructVisitor(core::marker::PhantomData::<Di>),
         )?;
 
         tree.verify();
@@ -613,9 +618,9 @@ fn test_raw_serde() {
     let de: RawSerdeTree<dim3::Dim3> = ron::de::from_str(&serialized).unwrap();
     assert_eq!(de.0, raw.0);
 
-    // Test with bincode
-    let serialized = bincode::serialize(&raw).unwrap();
-    let de: RawSerdeTree<dim3::Dim3> = bincode::deserialize(&serialized).unwrap();
+    // Test with postcard
+    let serialized = postcard::to_stdvec(&raw).unwrap();
+    let de: RawSerdeTree<dim3::Dim3> = postcard::from_bytes(&serialized).unwrap();
     assert_eq!(de.0, raw.0);
 }
 
@@ -630,8 +635,8 @@ fn test_invalid_tree() {
     };
     let raw = RawSerdeTree(tree);
 
-    let serialized = bincode::serialize(&raw).unwrap();
-    let _: RawSerdeTree<dim3::Dim3> = bincode::deserialize(&serialized).unwrap();
+    let serialized = postcard::to_stdvec(&raw).unwrap();
+    let _: RawSerdeTree<dim3::Dim3> = postcard::from_bytes(&serialized).unwrap();
 }
 
 #[cfg(feature = "serialize")]
@@ -1209,7 +1214,6 @@ fn process_sdf_trees<D: Dim>(
         match event {
             &AssetEvent::Added { id } | &AssetEvent::Modified { id } => {
                 let AssetId::Index { index, .. } = id else {
-                    warn!("Non-index AssetIds are not supported, but got: {id}");
                     continue;
                 };
 
@@ -1236,6 +1240,28 @@ pub struct ExecutableSdfs<'w, D: Dim> {
     processed: Res<'w, ProcessedSdfs<D>>,
 }
 
+pub struct ExecutableSdf<'a, D: Dim> {
+    pub order: &'a ExecutionOrder,
+    pub data: &'a [f32],
+    phantom: PhantomData<D>,
+}
+
+impl ExecutableSdf<'_, dim3::Dim3> {
+    pub fn distance(&self, p: Vec3) -> f32 {
+        self.order.distance(p, self.data)
+    }
+
+    pub fn gradient(&self, p: Vec3) -> Vec3 {
+        self.order.gradient(p, self.data)
+    }
+
+    pub fn aabb(&self, iso: Isometry3d) -> Aabb3d {
+        self.order.aabb(iso, self.data)
+    }
+}
+
+pub type ExecutableSdf3d<'a> = ExecutableSdf<'a, dim3::Dim3>;
+
 #[cfg(feature = "bevy_asset")]
 impl<'w, D: Dim> ExecutableSdfs<'w, D> {
     fn index_usize(index: AssetIndex) -> usize {
@@ -1250,25 +1276,39 @@ impl<'w, D: Dim> ExecutableSdfs<'w, D> {
         self.assets.is_empty() || self.processed.items.is_empty()
     }
 
-    pub fn get(&self, id: AssetId<SdfTree<D>>) -> Option<(usize, &ExecutionOrder, &[f32])> {
+    pub fn get(&self, id: AssetId<SdfTree<D>>) -> Option<(usize, ExecutableSdf<D>)> {
         let AssetId::Index { index, .. } = id else {
             return None;
         };
         self.processed.get(index).and_then(|order| {
-            self.assets
-                .get(id)
-                .map(|sdf| (Self::index_usize(index), order, sdf.data()))
+            self.assets.get(id).map(|sdf| {
+                (
+                    Self::index_usize(index),
+                    ExecutableSdf {
+                        order,
+                        data: sdf.data(),
+                        phantom: PhantomData,
+                    },
+                )
+            })
         })
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (usize, &ExecutionOrder, &[f32])> {
+    pub fn iter(&self) -> impl Iterator<Item = (usize, ExecutableSdf<D>)> {
         self.assets.iter().filter_map(|(id, sdf)| {
             let AssetId::Index { index, .. } = id else {
                 return None;
             };
-            self.processed
-                .get(index)
-                .map(|order| (Self::index_usize(index), order, sdf.data()))
+            self.processed.get(index).map(|order| {
+                (
+                    Self::index_usize(index),
+                    ExecutableSdf {
+                        order,
+                        data: sdf.data(),
+                        phantom: PhantomData,
+                    },
+                )
+            })
         })
     }
 }
@@ -1611,6 +1651,10 @@ impl ExecutionOrder {
                 Invert => {
                     grad = -grad;
                 }
+                Shell => {
+                    // TODO: We need the distance to determine this?
+                    grad = -grad;
+                }
 
                 Translate3d => {
                     pos_stack.push(pos);
@@ -1867,7 +1911,7 @@ impl SdfBounding<dim3::Dim3> for (&ExecutionOrder, &[f32]) {
 #[test]
 fn tree_aabb() {
     use AnySdf::*;
-    const PI_4: f32 = std::f32::consts::PI / 4.;
+    const PI_4: f32 = core::f32::consts::PI / 4.;
     let [x, y, z, w] = Quat::from_rotation_x(PI_4).to_array();
     let tree = SdfTree::<dim3::Dim3> {
         nodes: vec![
@@ -1894,32 +1938,32 @@ fn tree_aabb() {
     assert_eq!((expected.min, expected.max), (actual.min, actual.max));
 }
 
-pub trait Dim: Clone + Copy + Sync + Send + std::fmt::Debug + BevyReflect {
+pub trait Dim: Clone + Copy + Sync + Send + core::fmt::Debug + BevyReflect {
     const POS_SIZE: usize;
     const ROT_SIZE: usize;
     type Position: Clone
         + Copy
         + Sync
         + Send
-        + std::fmt::Debug
-        + std::ops::Add<Output = Self::Position>
-        + std::ops::Sub<Output = Self::Position>
-        + std::ops::Neg<Output = Self::Position>
+        + core::fmt::Debug
+        + core::ops::Add<Output = Self::Position>
+        + core::ops::Sub<Output = Self::Position>
+        + core::ops::Neg<Output = Self::Position>
         + BevyReflect;
     type Rotation: Clone
         + Copy
         + Sync
         + Send
-        + std::fmt::Debug
+        + core::fmt::Debug
         + Rotation<Self::Position>
         + BevyReflect;
     type Isometry: Clone
         + Copy
         + Sync
         + Send
-        + std::fmt::Debug
+        + core::fmt::Debug
         + BevyReflect
-        + std::ops::Mul<Self::Position>
+        + core::ops::Mul<Self::Position>
         + Isometry<Self::Position, Self::Rotation>;
 
     type Aabb: BoundingVolume;

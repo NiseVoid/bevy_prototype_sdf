@@ -92,7 +92,7 @@ impl Arc {
         Self {
             radius,
             thickness,
-            segment: (angle / 2.).clamp(0., std::f32::consts::PI),
+            segment: (angle / 2.).clamp(0., core::f32::consts::PI),
         }
     }
 }
@@ -135,7 +135,7 @@ impl Bounded2d for Arc {
         let iso = iso.into();
         // TODO
         let r = self.radius + self.thickness;
-        let half_width = if self.segment < std::f32::consts::PI / 2. {
+        let half_width = if self.segment < core::f32::consts::PI / 2. {
             self.radius * self.segment.sin() + self.thickness
         } else {
             r
