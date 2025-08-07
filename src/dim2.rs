@@ -1,6 +1,6 @@
 use crate::{Dim, Sdf, SdfBounding, SdfTree};
 
-use bevy::math::{bounding::*, primitives::*, Isometry2d, Rot2, Vec2};
+use bevy::math::{Isometry2d, Rot2, Vec2, bounding::*, primitives::*};
 use bevy::reflect::Reflect;
 
 #[cfg(feature = "serialize")]
@@ -40,10 +40,15 @@ impl Sdf<Dim2> for Circle {
     }
 
     fn gradient(&self, pos: Vec2) -> Vec2 {
+        pos.normalize_or_zero()
+    }
+
+    fn dist_grad(&self, pos: Vec2) -> (f32, Vec2) {
         if pos == Vec2::ZERO {
-            Vec2::ZERO
+            (-self.radius, Vec2::ZERO)
         } else {
-            pos.normalize()
+            let l = pos.length();
+            (l - self.radius, pos / l)
         }
     }
 }
@@ -60,20 +65,38 @@ impl Sdf<Dim2> for Rectangle {
             return Vec2::ZERO;
         }
 
-        let abs_pos = pos.abs();
-        let q = abs_pos - self.half_size;
-        let q_or_zero = q.max(Vec2::ZERO);
-        let l = q_or_zero.length_squared();
-        if l > 0. {
+        let q = pos.abs() - self.half_size;
+        if q.cmpgt(Vec2::ZERO).any() {
             // If we are outside the box, we can normalize q_or_zero and match it to the
             // pos sign (so we get the direction relative to the octant we are on)
-            q_or_zero / l.sqrt() * pos.signum()
+            q.max(Vec2::ZERO).normalize().copysign(pos)
         } else {
             // If we are on the inside, the gradient points to a normalized vector of the
             // closests sides
             let distance = -q;
             let min = distance.min_element();
             Vec2::select(distance.cmpeq(Vec2::splat(min)), pos.signum(), Vec2::ZERO).normalize()
+        }
+    }
+
+    fn dist_grad(&self, pos: Vec2) -> (f32, Vec2) {
+        if pos == Vec2::ZERO {
+            return (-self.half_size.min_element(), Vec2::ZERO);
+        }
+
+        let q = pos.abs() - self.half_size;
+        if q.cmpgt(Vec2::ZERO).any() {
+            let q_or_zero = q.max(Vec2::ZERO);
+            let l = q_or_zero.length();
+            (l + q.max_element().min(0.), (q_or_zero / l).copysign(pos))
+        } else {
+            let distances = -q;
+            let dist = distances.min_element();
+            (
+                dist,
+                Vec2::select(distances.cmpeq(Vec2::splat(dist)), pos.signum(), Vec2::ZERO)
+                    .normalize(),
+            )
         }
     }
 }
@@ -97,59 +120,64 @@ impl Arc {
     }
 }
 
-impl Sdf<Dim2> for Arc {
-    fn distance(&self, mut pos: Vec2) -> f32 {
+impl Arc {
+    fn base<O>(
+        &self,
+        mut pos: Vec2,
+        a: impl FnOnce(Vec2, f32) -> O,
+        b: impl FnOnce(f32, f32) -> O,
+    ) -> O {
         let q = pos;
         let sc = Vec2::new(self.segment.sin(), self.segment.cos());
         pos.x = pos.x.abs();
         if sc.y * pos.x > sc.x * pos.y {
             let w = pos - self.radius * sc;
             let l = w.length();
-            l - self.thickness
+            a(w, l)
         } else {
             let l = q.length();
             let w = l - self.radius;
-            w.abs() - self.thickness
+            b(w, l)
         }
     }
+}
 
-    fn gradient(&self, mut pos: Vec2) -> Vec2 {
-        let q = pos;
-        let sc = Vec2::new(self.segment.sin(), self.segment.cos());
-        let s = pos.x.signum();
-        pos.x = pos.x.abs();
-        if sc.y * pos.x > sc.x * pos.y {
-            let w = pos - self.radius * sc;
-            let l = w.length();
-            Vec2::new(s * w.x, w.y) / l
-        } else {
-            let l = q.length();
-            let w = l - self.radius;
-            w.signum() * q / l
-        }
+impl Sdf<Dim2> for Arc {
+    fn distance(&self, pos: Vec2) -> f32 {
+        self.base(
+            pos,
+            |_, l| l - self.thickness,
+            |w, _| w.abs() - self.thickness,
+        )
+    }
+
+    fn gradient(&self, pos: Vec2) -> Vec2 {
+        self.base(
+            pos,
+            |w, l| Vec2::new(w.x.copysign(pos.x), w.y) / l,
+            |w, l| w.signum() * pos / l,
+        )
+    }
+
+    fn dist_grad(&self, pos: Vec2) -> (f32, Vec2) {
+        self.base(
+            pos,
+            |w, l| (l - self.thickness, Vec2::new(w.x.copysign(pos.x), w.y) / l),
+            |w, l| (w.abs() - self.thickness, w.signum() * pos / l),
+        )
     }
 }
 
 impl Bounded2d for Arc {
     fn aabb_2d(&self, iso: impl Into<Isometry2d>) -> Aabb2d {
-        let iso = iso.into();
-        // TODO
-        let r = self.radius + self.thickness;
-        let half_width = if self.segment < core::f32::consts::PI / 2. {
-            self.radius * self.segment.sin() + self.thickness
-        } else {
-            r
-        };
-        let bottom = self.segment.cos() * self.radius - self.thickness;
-        Aabb2d {
-            min: Vec2::new(-half_width, bottom) + iso.translation,
-            max: Vec2::new(half_width, r) + iso.translation,
-        }
+        Arc2d::new(self.radius, self.segment)
+            .aabb_2d(iso)
+            .grow(Vec2::splat(self.thickness))
     }
 
     fn bounding_circle(&self, iso: impl Into<Isometry2d>) -> BoundingCircle {
-        let iso = iso.into();
-        // TODO: This isn't an optimal bounding circle
-        BoundingCircle::new(iso.translation, self.radius + self.thickness)
+        Arc2d::new(self.radius, self.segment)
+            .bounding_circle(iso)
+            .grow(self.thickness)
     }
 }

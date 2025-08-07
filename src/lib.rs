@@ -17,7 +17,7 @@ use bevy::{
 
 #[cfg(feature = "bevy_asset")]
 use bevy::{
-    asset::{io::Reader, AssetEvents, AssetIndex, AssetLoader, LoadContext},
+    asset::{AssetEvents, AssetIndex, AssetLoader, LoadContext, io::Reader},
     ecs::system::SystemParam,
 };
 #[cfg(feature = "bevy_asset")]
@@ -31,6 +31,10 @@ impl Plugin for SdfPlugin {
     fn build(&self, app: &mut App) {
         app.register_type::<Sdf2d>().register_type::<Sdf3d>();
 
+        #[cfg(feature = "serialize")]
+        app.register_type::<PrettySerdeTree2d>()
+            .register_type::<PrettySerdeTree3d>();
+
         #[cfg(feature = "bevy_asset")]
         app.init_asset::<Sdf3d>()
             .init_asset::<Sdf2d>()
@@ -38,7 +42,7 @@ impl Plugin for SdfPlugin {
             .init_resource::<ProcessedSdfs<dim2::Dim2>>()
             .init_resource::<ProcessedSdfs<dim3::Dim3>>()
             .add_systems(
-                Last,
+                PostUpdate,
                 (
                     process_sdf_trees::<dim2::Dim2>,
                     process_sdf_trees::<dim3::Dim3>,
@@ -121,6 +125,7 @@ pub trait Sdf<D: Dim>:
 {
     fn distance(&self, pos: D::Position) -> f32;
     fn gradient(&self, pos: D::Position) -> D::Position;
+    fn dist_grad(&self, pos: D::Position) -> (f32, D::Position);
 }
 
 pub trait SdfBounding<D: Dim> {
@@ -383,6 +388,18 @@ impl<D: Dim, P: StorablePrimitive + ToNode<D = D>> From<P> for SdfTree<D> {
     }
 }
 
+impl<P: StorablePrimitive + ToNode<D = dim2::Dim2>> From<(P, f32)> for SdfTree<dim3::Dim3> {
+    fn from((p, half_height): (P, f32)) -> Self {
+        let mut tree = SdfTree {
+            nodes: vec![TreeNode::new(AnySdf::Extrude, 0)],
+            data: vec![half_height],
+            phantom: PhantomData,
+        };
+        tree.add_primitive(p);
+        tree
+    }
+}
+
 impl<D: Dim> PartialEq for SdfTree<D> {
     fn eq(&self, other: &Self) -> bool {
         self.nodes == other.nodes && self.data == other.data
@@ -497,9 +514,10 @@ impl<D: Dim> SdfTree<D> {
 }
 
 #[cfg(feature = "serialize")]
+#[derive(Deref, DerefMut)]
 /// A wrapper providing raw serialization for SDF trees. This serialization is not intended to be
 /// stable or human readable. If you want either of those properties, use [`PrettySerdeTree3d`] instead.
-pub struct RawSerdeTree<D: Dim>(SdfTree<D>);
+pub struct RawSerdeTree<D: Dim>(pub SdfTree<D>);
 
 #[cfg(feature = "serialize")]
 impl<D: Dim> serde::Serialize for RawSerdeTree<D> {
@@ -640,7 +658,9 @@ fn test_invalid_tree() {
 }
 
 #[cfg(feature = "serialize")]
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Reflect, Debug, serde::Serialize, serde::Deserialize)]
+#[reflect(opaque)]
+#[reflect(Clone, Serialize, Deserialize)]
 pub enum PrettySerdeTree2d {
     // Operations
     Union(Box<Self>, Box<Self>),
@@ -663,7 +683,9 @@ pub enum PrettySerdeTree2d {
 }
 
 #[cfg(feature = "serialize")]
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Reflect, Debug, serde::Serialize, serde::Deserialize)]
+#[reflect(opaque)]
+#[reflect(Clone, Serialize, Deserialize)]
 pub enum PrettySerdeTree3d {
     // Operations
     Union(Box<Self>, Box<Self>),
@@ -1150,6 +1172,9 @@ struct ProcessedSdfs<D> {
     phantom: PhantomData<D>,
 }
 
+#[derive(Event)]
+pub struct SdfProcessed(pub AssetIndex);
+
 #[cfg(feature = "bevy_asset")]
 impl<D> ProcessedSdfs<D> {
     fn index_and_generation(index: AssetIndex) -> (usize, u32) {
@@ -1185,11 +1210,11 @@ impl<D> ProcessedSdfs<D> {
     fn remove(&mut self, index: AssetIndex) {
         let (index, generation) = Self::index_and_generation(index);
         let cur_gen = self.generations.get(index).copied();
-        if cur_gen.is_none() || cur_gen != Some(generation) {
+        if cur_gen != Some(generation) {
             return;
         }
         self.generations[index] = 0;
-        self.items.remove(index);
+        self.items[index] = ExecutionOrder::default();
     }
 }
 
@@ -1206,6 +1231,7 @@ impl<D: Dim> Default for ProcessedSdfs<D> {
 
 #[cfg(feature = "bevy_asset")]
 fn process_sdf_trees<D: Dim>(
+    mut commands: Commands,
     sdfs: Res<Assets<SdfTree<D>>>,
     mut events: EventReader<AssetEvent<SdfTree<D>>>,
     mut processed: ResMut<ProcessedSdfs<D>>,
@@ -1221,6 +1247,7 @@ fn process_sdf_trees<D: Dim>(
                 let mut order = ExecutionOrder::default();
                 sdf.get_execution_order(&mut order);
                 processed.insert(index, order);
+                commands.trigger(SdfProcessed(index));
             }
             &AssetEvent::Removed { id } => {
                 let AssetId::Index { index, .. } = id else {
@@ -1630,30 +1657,42 @@ impl ExecutionOrder {
     pub fn gradient(&self, mut pos: Vec3, slice: &[f32]) -> Vec3 {
         use AnyExec::*;
 
-        let mut grad = Vec3::ZERO;
-        let mut grad_stack = Stack::<Vec3>::new();
+        let (mut dist, mut grad) = (0., Vec3::ZERO);
+        let mut stack = Stack::<(f32, Vec3)>::new();
         let mut pos_stack = Stack::<Vec3>::new();
 
         for node in self.0.iter() {
             let data = node.value as usize;
             match node.exec {
                 PushStack => {
-                    grad_stack.push(grad);
+                    stack.push((dist, grad));
                 }
                 Union => {
-                    // TODO
+                    // TODO: We need distances of a and b for this
                     todo!()
                 }
                 Subtract => {
-                    // TODO
+                    // TODO: We need distances of a and b for this
+                    todo!()
+                }
+                Intersect => {
+                    // TODO: We need distances of a and b for this
                     todo!()
                 }
                 Invert => {
                     grad = -grad;
                 }
                 Shell => {
-                    // TODO: We need the distance to determine this?
-                    grad = -grad;
+                    let old_dist = dist.abs();
+                    dist = old_dist - slice[data];
+                    if old_dist < 0. {
+                        grad = -grad;
+                    }
+                }
+
+                Translate2d | Rotate2d | Revolve => {
+                    // TODO
+                    todo!()
                 }
 
                 Translate3d => {
@@ -1670,45 +1709,77 @@ impl ExecutionOrder {
                 PopPosition => {
                     pos = pos_stack.pop().unwrap();
                 }
+                PreExtrude => {
+                    pos_stack.push(pos);
+                    pos = pos.xz().extend(0.);
+                }
+                Extrude => {
+                    pos = pos_stack.pop().unwrap();
+                    use bevy::math::Vec2;
+
+                    let w = Vec2::new(dist, pos.y.abs() - slice[data]);
+
+                    if w.y <= 0. {
+                        if w.y > w.x {
+                            grad = Vec3::Y;
+                        } else {
+                            grad = Vec3::new(grad.x, 0., grad.y)
+                        }
+                    } else {
+                        let d_or_zero = dist.max(0.);
+                        grad = Vec3::new(
+                            d_or_zero * grad.x,
+                            w.y.max(0.) * pos.y.signum(),
+                            d_or_zero * grad.y,
+                        )
+                        .normalize()
+                    }
+                    dist = w.x.max(w.y).min(0.0) + w.max(Vec2::ZERO).length();
+                }
+                PostRevolve => {
+                    // TODO
+                    todo!()
+                }
 
                 Circle => {
                     let circle = bevy::math::primitives::Circle::load(&slice[data..]);
-                    let grad2d = circle.gradient(pos.xz());
-                    grad = Vec3::new(grad2d.x, 0., grad2d.y);
+                    let grad2d: Vec2;
+                    (dist, grad2d) = circle.dist_grad(pos.xy());
+                    grad = grad2d.extend(0.);
                 }
                 Rectangle => {
                     let rect = bevy::math::primitives::Rectangle::load(&slice[data..]);
-                    let grad2d = rect.gradient(pos.xz());
-                    grad = Vec3::new(grad2d.x, 0., grad2d.y);
+                    let grad2d: Vec2;
+                    (dist, grad2d) = rect.dist_grad(pos.xy());
+                    grad = grad2d.extend(0.);
                 }
                 Arc => {
                     let arc = dim2::Arc::load(&slice[data..]);
-                    let grad2d = arc.gradient(pos.xz());
-                    grad = Vec3::new(grad2d.x, 0., grad2d.y);
+                    let grad2d: Vec2;
+                    (dist, grad2d) = arc.dist_grad(pos.xy());
+                    grad = grad2d.extend(0.);
                 }
 
                 Sphere => {
                     let radius = slice[data];
-                    grad = bevy::math::primitives::Sphere { radius }.gradient(pos);
+                    (dist, grad) = bevy::math::primitives::Sphere { radius }.dist_grad(pos);
                 }
                 Capsule => {
                     let capsule = bevy::math::primitives::Capsule3d::load(&slice[data..]);
-                    grad = capsule.gradient(pos);
+                    (dist, grad) = capsule.dist_grad(pos);
                 }
                 Cylinder => {
                     let cylinder = bevy::math::primitives::Cylinder::load(&slice[data..]);
-                    grad = cylinder.gradient(pos);
+                    (dist, grad) = cylinder.dist_grad(pos);
                 }
                 Cuboid => {
                     let cuboid = bevy::math::primitives::Cuboid::load(&slice[data..]);
-                    grad = cuboid.gradient(pos);
+                    (dist, grad) = cuboid.dist_grad(pos);
                 }
                 InfinitePlane3d => {
                     let plane = bevy::math::primitives::InfinitePlane3d::load(&slice[data..]);
-                    grad = plane.gradient(pos);
+                    (dist, grad) = plane.dist_grad(pos);
                 }
-
-                other => todo!("{:?}", other),
             }
         }
 
@@ -1788,19 +1859,21 @@ impl ExecutionOrder {
 
                     iso = Isometry3d {
                         translation: Vec3A::ZERO,
-                        rotation: Quat::from_rotation_z(base_angle),
+                        rotation: Quat::from_rotation_z(-base_angle),
                     }
                 }
                 Extrude => {
                     iso = pos_stack.pop().unwrap();
-                    let inverse_rot = iso.rotation.inverse();
+
+                    let (_, x, z) = iso.rotation.to_euler(EulerRot::YXZ);
+                    let rot = Quat::from_euler(EulerRot::YXZ, 0., x, z);
 
                     let half_height = slice[data];
                     let min = aabb.min.xy();
                     let max = aabb.max.xy();
 
-                    let a = inverse_rot * vec3a(min.x, -half_height, min.y);
-                    let b = inverse_rot * vec3a(max.x, half_height, max.y);
+                    let a = rot * vec3a(min.x, -half_height, min.y);
+                    let b = rot * vec3a(max.x, half_height, max.y);
                     aabb = Aabb3d {
                         min: a.min(b),
                         max: a.max(b),
@@ -1833,21 +1906,21 @@ impl ExecutionOrder {
                 }
 
                 Circle => {
-                    let comp = iso.rotation * vec3(0., 0., 1.);
-                    let rotation = Rot2::from_sin_cos(comp.x, comp.z);
+                    let comp = iso.rotation * vec3(1., 0., 0.);
+                    let rotation = Rot2::from_sin_cos(comp.y, comp.x);
                     let iso = Isometry2d {
                         translation: iso.translation.xy(),
                         rotation,
                     };
                     let aabb2d = bevy::math::primitives::Circle::load(&slice[data..]).aabb_2d(iso);
                     aabb = Aabb3d {
-                        min: Vec3A::new(aabb2d.min.x, aabb2d.min.y, 0.),
-                        max: Vec3A::new(aabb2d.max.x, aabb2d.max.y, 0.),
+                        min: aabb2d.min.extend(0.).into(),
+                        max: aabb2d.max.extend(0.).into(),
                     };
                 }
                 Rectangle => {
-                    let comp = iso.rotation * vec3(0., 0., 1.);
-                    let rotation = Rot2::from_sin_cos(comp.x, comp.z);
+                    let comp = iso.rotation * vec3(1., 0., 0.);
+                    let rotation = Rot2::from_sin_cos(comp.y, comp.x);
                     let iso = Isometry2d {
                         translation: iso.translation.xy(),
                         rotation,
@@ -1855,21 +1928,21 @@ impl ExecutionOrder {
                     let aabb2d =
                         bevy::math::primitives::Rectangle::load(&slice[data..]).aabb_2d(iso);
                     aabb = Aabb3d {
-                        min: Vec3A::new(aabb2d.min.x, aabb2d.min.y, 0.),
-                        max: Vec3A::new(aabb2d.max.x, aabb2d.max.y, 0.),
+                        min: aabb2d.min.extend(0.).into(),
+                        max: aabb2d.max.extend(0.).into(),
                     };
                 }
                 Arc => {
-                    let comp = iso.rotation * vec3(0., 0., 1.);
-                    let rotation = Rot2::from_sin_cos(comp.x, comp.z);
+                    let comp = iso.rotation * vec3(1., 0., 0.);
+                    let rotation = Rot2::from_sin_cos(comp.y, comp.x);
                     let iso = Isometry2d {
                         translation: iso.translation.xy(),
                         rotation,
                     };
                     let aabb2d = dim2::Arc::load(&slice[data..]).aabb_2d(iso);
                     aabb = Aabb3d {
-                        min: Vec3A::new(aabb2d.min.x, aabb2d.min.y, 0.),
-                        max: Vec3A::new(aabb2d.max.x, aabb2d.max.y, 0.),
+                        min: aabb2d.min.extend(0.).into(),
+                        max: aabb2d.max.extend(0.).into(),
                     };
                 }
 

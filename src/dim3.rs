@@ -1,6 +1,6 @@
 use crate::{Dim, Sdf, SdfBounding, SdfTree};
 
-use bevy::math::{bounding::*, primitives::*, Isometry3d, Quat, Vec3};
+use bevy::math::{Isometry3d, Quat, Vec3, bounding::*, primitives::*};
 use bevy::reflect::Reflect;
 
 #[cfg(feature = "serialize")]
@@ -40,36 +40,47 @@ impl Sdf<Dim3> for Sphere {
     }
 
     fn gradient(&self, pos: Vec3) -> Vec3 {
+        pos.normalize_or_zero()
+    }
+
+    fn dist_grad(&self, pos: Vec3) -> (f32, Vec3) {
         if pos == Vec3::ZERO {
-            Vec3::ZERO
+            (-self.radius, Vec3::ZERO)
         } else {
-            pos.normalize()
+            let l = pos.length();
+            (l - self.radius, pos / l)
         }
     }
 }
 
+fn capsule_base(s: &Capsule3d, pos: Vec3) -> Vec3 {
+    let mut pa = pos;
+    pa.y += s.half_length;
+    let length = s.half_length * 2.;
+    let ba = Vec3::new(0., length, 0.);
+    let h = (pa.dot(ba) / length.powi(2)).clamp(0., 1.);
+    let q = pa - ba * h;
+    q
+}
+
 impl Sdf<Dim3> for Capsule3d {
     fn distance(&self, pos: Vec3) -> f32 {
-        let mut pa = pos;
-        pa.y += self.half_length;
-        let length = self.half_length * 2.;
-        let ba = Vec3::new(0., length, 0.);
-        let h = (pa.dot(ba) / length.powi(2)).clamp(0., 1.);
-        let q = pa - ba * h;
+        let q = capsule_base(self, pos);
         q.length() - self.radius
     }
 
     fn gradient(&self, pos: Vec3) -> Vec3 {
-        let mut pa = pos;
-        pa.y += self.half_length;
-        let length = self.half_length * 2.;
-        let ba = Vec3::new(0., length, 0.);
-        let h = (pa.dot(ba) / length.powi(2)).clamp(0., 1.);
-        let q = pa - ba * h;
+        let q = capsule_base(self, pos);
+        q.normalize_or_zero()
+    }
+
+    fn dist_grad(&self, pos: Vec3) -> (f32, Vec3) {
+        let q = capsule_base(self, pos);
         if q == Vec3::ZERO {
-            Vec3::ZERO
+            (-self.radius, Vec3::ZERO)
         } else {
-            q.normalize()
+            let l = q.length();
+            (l - self.radius, q / l)
         }
     }
 }
@@ -86,14 +97,11 @@ impl Sdf<Dim3> for Cuboid {
             return Vec3::ZERO;
         }
 
-        let abs_pos = pos.abs();
-        let q = abs_pos - self.half_size;
-        let q_or_zero = q.max(Vec3::ZERO);
-        let l = q_or_zero.length_squared();
-        if l > 0. {
+        let q = pos.abs() - self.half_size;
+        if q.cmpgt(Vec3::ZERO).any() {
             // If we are outside the box, we can normalize q_or_zero and match it to the
             // pos sign (so we get the direction relative to the octant we are on)
-            q_or_zero / l.sqrt() * pos.signum()
+            q.max(Vec3::ZERO).normalize().copysign(pos)
         } else {
             // If we are on the inside, the gradient points to a normalized vector of the
             // closests sides
@@ -102,22 +110,46 @@ impl Sdf<Dim3> for Cuboid {
             Vec3::select(distance.cmpeq(Vec3::splat(min)), pos.signum(), Vec3::ZERO).normalize()
         }
     }
+
+    fn dist_grad(&self, pos: Vec3) -> (f32, Vec3) {
+        if pos == Vec3::ZERO {
+            return (-self.half_size.min_element(), Vec3::ZERO);
+        }
+
+        let q = pos.abs() - self.half_size;
+        if q.cmpgt(Vec3::ZERO).any() {
+            let q_or_zero = q.max(Vec3::ZERO);
+            let l = q_or_zero.length();
+            (l + q.max_element().min(0.), (q_or_zero / l).copysign(pos))
+        } else {
+            let distances = -q;
+            let dist = distances.min_element();
+            (
+                dist,
+                Vec3::select(distances.cmpeq(Vec3::splat(dist)), pos.signum(), Vec3::ZERO)
+                    .normalize(),
+            )
+        }
+    }
+}
+
+fn cylinder_base(s: &Cylinder, pos: Vec3) -> (bevy::math::Vec2, f32, bevy::math::Vec2) {
+    use bevy::math::{Vec2, Vec3Swizzles};
+    let p2d = pos.xz();
+    let l = p2d.length();
+    let w = Vec2::new(l, pos.y).abs() - Vec2::new(s.radius, s.half_height);
+    (p2d, l, w)
 }
 
 impl Sdf<Dim3> for Cylinder {
     fn distance(&self, pos: Vec3) -> f32 {
-        use bevy::math::{Vec2, Vec3Swizzles};
-        let p2d = pos.xz();
-        let l = p2d.length();
-        let w = Vec2::new(l, pos.y).abs() - Vec2::new(self.radius, self.half_height);
+        use bevy::math::Vec2;
+        let (_, _, w) = cylinder_base(self, pos);
         w.x.max(w.y).min(0.0) + w.max(Vec2::ZERO).length()
     }
 
     fn gradient(&self, pos: Vec3) -> Vec3 {
-        use bevy::math::{Vec2, Vec3Swizzles};
-        let p2d = pos.xz();
-        let l = p2d.length();
-        let w = Vec2::new(l, pos.y).abs() - Vec2::new(self.radius, self.half_height);
+        let (p2d, l, w) = cylinder_base(self, pos);
 
         let grad2d = p2d / l;
         if w.y <= 0. {
@@ -136,6 +168,31 @@ impl Sdf<Dim3> for Cylinder {
             .normalize()
         }
     }
+
+    fn dist_grad(&self, pos: Vec3) -> (f32, Vec3) {
+        use bevy::math::Vec2;
+        let (p2d, l, w) = cylinder_base(self, pos);
+
+        let grad2d = p2d / l;
+        if w.y <= 0. {
+            if w.x <= 0. && w.y > w.x {
+                (w.y - self.half_height, Vec3::Y)
+            } else {
+                (w.x, Vec3::new(grad2d.x, 0., grad2d.y))
+            }
+        } else {
+            let d_or_zero = w.x.max(0.);
+            (
+                w.x.max(w.y).min(0.0) + w.max(Vec2::ZERO).length(),
+                Vec3::new(
+                    d_or_zero * grad2d.x,
+                    w.y.max(0.) * pos.y.signum(),
+                    d_or_zero * grad2d.y,
+                )
+                .normalize(),
+            )
+        }
+    }
 }
 
 impl Sdf<Dim3> for InfinitePlane3d {
@@ -145,5 +202,10 @@ impl Sdf<Dim3> for InfinitePlane3d {
 
     fn gradient(&self, _: Vec3) -> Vec3 {
         self.normal.into()
+    }
+
+    fn dist_grad(&self, pos: Vec3) -> (f32, Vec3) {
+        let normal = *self.normal;
+        (pos.dot(normal), normal)
     }
 }
