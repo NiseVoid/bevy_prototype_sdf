@@ -17,7 +17,7 @@ use bevy::{
 
 #[cfg(feature = "bevy_asset")]
 use bevy::{
-    asset::{AssetEvents, AssetIndex, AssetLoader, LoadContext, io::Reader},
+    asset::{AssetEventSystems, AssetIndex, AssetLoader, LoadContext, io::Reader},
     ecs::system::SystemParam,
 };
 #[cfg(feature = "bevy_asset")]
@@ -48,7 +48,7 @@ impl Plugin for SdfPlugin {
                     process_sdf_trees::<dim3::Dim3>,
                 )
                     .in_set(SdfProcessing)
-                    .after(AssetEvents),
+                    .after(AssetEventSystems),
             );
 
         #[cfg(feature = "shader")]
@@ -1233,7 +1233,7 @@ impl<D: Dim> Default for ProcessedSdfs<D> {
 fn process_sdf_trees<D: Dim>(
     mut commands: Commands,
     sdfs: Res<Assets<SdfTree<D>>>,
-    mut events: EventReader<AssetEvent<SdfTree<D>>>,
+    mut events: MessageReader<AssetEvent<SdfTree<D>>>,
     mut processed: ResMut<ProcessedSdfs<D>>,
 ) {
     for event in events.read() {

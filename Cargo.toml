@@ -21,7 +21,7 @@ bevy_asset = ["bevy/bevy_asset", "serialize", "dep:thiserror", "dep:ron"]
 shader = ["bevy/bevy_render", "bevy/bevy_asset"]
 
 [dependencies]
-bevy = {version = "0.16.0", default-features=false}
+bevy = {version = "0.17.0", default-features=false}
 serde = {version = "1.0", features=["serde_derive"], optional=true}
 arrayvec = {version = "0.7", default-features=false}
 thiserror = {version = "2.0", default-features=false, optional=true}
