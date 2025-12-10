@@ -1,14 +1,17 @@
-use crate::{Dim, Sdf, SdfBounding, SdfTree};
+#[cfg(feature = "alloc")]
+use crate::tree::SdfTree;
+use crate::{Dim, Sdf, SdfBounding};
 
-use bevy::math::{Isometry2d, Rot2, Vec2, bounding::*, primitives::*};
+#[cfg(feature = "bevy")]
 use bevy::reflect::Reflect;
-
-#[cfg(feature = "serialize")]
+#[cfg(all(feature = "serialize", feature = "bevy"))]
 use bevy::reflect::ReflectDeserialize;
+use bevy_math::{Isometry2d, Rot2, Vec2, bounding::*, ops::sin_cos, primitives::*};
 
-#[derive(Reflect, Clone, Copy, Debug)]
+#[cfg_attr(feature = "bevy", derive(Reflect))]
+#[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "serialize", reflect(Deserialize))]
+#[cfg_attr(all(feature = "serialize", feature = "bevy"), reflect(Deserialize))]
 pub struct Dim2;
 
 impl Dim for Dim2 {
@@ -32,6 +35,7 @@ impl<P: Sdf<Dim2> + Bounded2d> SdfBounding<Dim2> for P {
     }
 }
 
+#[cfg(feature = "alloc")]
 pub type Sdf2d = SdfTree<Dim2>;
 
 impl Sdf<Dim2> for Circle {
@@ -101,7 +105,8 @@ impl Sdf<Dim2> for Rectangle {
     }
 }
 
-#[derive(Reflect, Clone, Copy, Debug)]
+#[cfg_attr(feature = "bevy", derive(Reflect))]
+#[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serialize", reflect(Deserialize))]
 pub struct Arc {
@@ -128,7 +133,8 @@ impl Arc {
         b: impl FnOnce(f32, f32) -> O,
     ) -> O {
         let q = pos;
-        let sc = Vec2::new(self.segment.sin(), self.segment.cos());
+        let sin_cos = sin_cos(self.segment);
+        let sc = Vec2::new(sin_cos.0, sin_cos.1);
         pos.x = pos.x.abs();
         if sc.y * pos.x > sc.x * pos.y {
             let w = pos - self.radius * sc;

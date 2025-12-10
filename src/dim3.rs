@@ -1,14 +1,18 @@
-use crate::{Dim, Sdf, SdfBounding, SdfTree};
+#[cfg(feature = "alloc")]
+use crate::SdfTree;
+use crate::{Dim, Sdf, SdfBounding};
 
-use bevy::math::{Isometry3d, Quat, Vec3, bounding::*, primitives::*};
+#[cfg(feature = "bevy")]
 use bevy::reflect::Reflect;
+use bevy_math::{FloatPow, Isometry3d, Quat, Vec3, bounding::*, primitives::*};
 
-#[cfg(feature = "serialize")]
+#[cfg(all(feature = "bevy", feature = "serialize"))]
 use bevy::reflect::ReflectDeserialize;
 
-#[derive(Reflect, Clone, Copy, Debug)]
+#[cfg_attr(feature = "bevy", derive(Reflect))]
+#[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "serialize", reflect(Deserialize))]
+#[cfg_attr(all(feature = "serialize", feature = "bevy"), reflect(Deserialize))]
 pub struct Dim3;
 
 impl Dim for Dim3 {
@@ -32,6 +36,7 @@ impl<P: Sdf<Dim3> + Bounded3d> SdfBounding<Dim3> for P {
     }
 }
 
+#[cfg(feature = "alloc")]
 pub type Sdf3d = SdfTree<Dim3>;
 
 impl Sdf<Dim3> for Sphere {
@@ -58,7 +63,7 @@ fn capsule_base(s: &Capsule3d, pos: Vec3) -> Vec3 {
     pa.y += s.half_length;
     let length = s.half_length * 2.;
     let ba = Vec3::new(0., length, 0.);
-    let h = (pa.dot(ba) / length.powi(2)).clamp(0., 1.);
+    let h = (pa.dot(ba) / length.squared()).clamp(0., 1.);
     let q = pa - ba * h;
     q
 }
@@ -133,8 +138,8 @@ impl Sdf<Dim3> for Cuboid {
     }
 }
 
-fn cylinder_base(s: &Cylinder, pos: Vec3) -> (bevy::math::Vec2, f32, bevy::math::Vec2) {
-    use bevy::math::{Vec2, Vec3Swizzles};
+fn cylinder_base(s: &Cylinder, pos: Vec3) -> (bevy_math::Vec2, f32, bevy_math::Vec2) {
+    use bevy_math::{Vec2, Vec3Swizzles};
     let p2d = pos.xz();
     let l = p2d.length();
     let w = Vec2::new(l, pos.y).abs() - Vec2::new(s.radius, s.half_height);
@@ -143,7 +148,7 @@ fn cylinder_base(s: &Cylinder, pos: Vec3) -> (bevy::math::Vec2, f32, bevy::math:
 
 impl Sdf<Dim3> for Cylinder {
     fn distance(&self, pos: Vec3) -> f32 {
-        use bevy::math::Vec2;
+        use bevy_math::Vec2;
         let (_, _, w) = cylinder_base(self, pos);
         w.x.max(w.y).min(0.0) + w.max(Vec2::ZERO).length()
     }
@@ -170,7 +175,7 @@ impl Sdf<Dim3> for Cylinder {
     }
 
     fn dist_grad(&self, pos: Vec3) -> (f32, Vec3) {
-        use bevy::math::Vec2;
+        use bevy_math::Vec2;
         let (p2d, l, w) = cylinder_base(self, pos);
 
         let grad2d = p2d / l;
