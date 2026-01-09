@@ -100,6 +100,7 @@ enum AnySdf {
     Sphere = 0b1001_0000_0000_0000,
     Capsule3d,
     Cylinder,
+    Torus,
     Cuboid,
     InfinitePlane3d,
 }
@@ -216,6 +217,21 @@ impl StorablePrimitive for Cylinder {
     }
 }
 
+impl StorablePrimitive for Torus {
+    const SIZE: u32 = 2;
+
+    #[cfg(feature = "alloc")]
+    fn store(&self, data: &mut Vec<f32>) {
+        data.extend([self.major_radius, self.minor_radius]);
+    }
+    fn load(data: &[f32]) -> Self {
+        Self {
+            major_radius: data[0],
+            minor_radius: data[1],
+        }
+    }
+}
+
 impl StorablePrimitive for Cuboid {
     const SIZE: u32 = 3;
 
@@ -288,6 +304,13 @@ impl ToNode for Cylinder {
     type D = dim3::Dim3;
     fn node() -> AnySdf {
         AnySdf::Cylinder
+    }
+}
+
+impl ToNode for Torus {
+    type D = dim3::Dim3;
+    fn node() -> AnySdf {
+        AnySdf::Torus
     }
 }
 
@@ -390,6 +413,7 @@ impl TreeNode {
             AnySdf::Sphere => verify_primitive::<Sphere>(data_len, self.value),
             AnySdf::Cylinder => verify_primitive::<Cylinder>(data_len, self.value),
             AnySdf::Capsule3d => verify_primitive::<Capsule3d>(data_len, self.value),
+            AnySdf::Torus => verify_primitive::<Torus>(data_len, self.value),
             AnySdf::Cuboid => verify_primitive::<Cuboid>(data_len, self.value),
             AnySdf::InfinitePlane3d => verify_primitive::<InfinitePlane3d>(data_len, self.value),
         }
@@ -459,6 +483,7 @@ pub enum AnyExec {
     Sphere,
     Capsule,
     Cylinder,
+    Torus,
     Cuboid,
     InfinitePlane3d,
 }
@@ -585,6 +610,10 @@ impl ExecutableExt for [ExecutionNode] {
                 Cylinder => {
                     let cylinder = bevy_math::primitives::Cylinder::load(&slice[data..]);
                     dist = cylinder.distance(pos);
+                }
+                Torus => {
+                    let torus = bevy_math::primitives::Torus::load(&slice[data..]);
+                    dist = torus.distance(pos);
                 }
                 Cuboid => {
                     let cuboid = bevy_math::primitives::Cuboid::load(&slice[data..]);
@@ -718,6 +747,10 @@ impl ExecutableExt for [ExecutionNode] {
                 Cylinder => {
                     let cylinder = bevy_math::primitives::Cylinder::load(&slice[data..]);
                     (dist, grad) = cylinder.dist_grad(pos);
+                }
+                Torus => {
+                    let torus = bevy_math::primitives::Torus::load(&slice[data..]);
+                    (dist, grad) = torus.dist_grad(pos);
                 }
                 Cuboid => {
                     let cuboid = bevy_math::primitives::Cuboid::load(&slice[data..]);
@@ -901,6 +934,9 @@ impl ExecutableExt for [ExecutionNode] {
                 }
                 Cylinder => {
                     aabb = bevy_math::primitives::Cylinder::load(&slice[data..]).aabb_3d(iso);
+                }
+                Torus => {
+                    aabb = bevy_math::primitives::Torus::load(&slice[data..]).aabb_3d(iso);
                 }
                 Cuboid => {
                     aabb = bevy_math::primitives::Cuboid::load(&slice[data..]).aabb_3d(iso);

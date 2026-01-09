@@ -207,6 +207,7 @@ impl<D: Dim> SdfTree<D> {
                 AnySdf::Sphere => ExecutionNode::new(AnyExec::Sphere, node.value),
                 AnySdf::Capsule3d => ExecutionNode::new(AnyExec::Capsule, node.value),
                 AnySdf::Cylinder => ExecutionNode::new(AnyExec::Cylinder, node.value),
+                AnySdf::Torus => ExecutionNode::new(AnyExec::Torus, node.value),
                 AnySdf::Cuboid => ExecutionNode::new(AnyExec::Cuboid, node.value),
                 AnySdf::InfinitePlane3d => ExecutionNode::new(AnyExec::InfinitePlane3d, node.value),
             };

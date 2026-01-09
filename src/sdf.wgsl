@@ -33,8 +33,9 @@ const EXEC_ARC = 17u;
 const EXEC_SPHERE = 18u;
 const EXEC_CAPSULE_3D = 19u;
 const EXEC_CYLINDER = 20u;
-const EXEC_CUBOID = 21u;
-const EXEC_INFINITE_PLANE_3D = 22u;
+const EXEC_TORUS = 21u;
+const EXEC_CUBOID = 22u;
+const EXEC_INFINITE_PLANE_3D = 23u;
 
 fn sdf(p: vec3<f32>, order_start: u32, data_start: u32) -> f32 {
     let order_len = sdf_order[order_start];
@@ -188,6 +189,11 @@ fn sdf(p: vec3<f32>, order_start: u32, data_start: u32) -> f32 {
                 let half_height = sdf_data[offset+1];
                 dist = sd_cylinder(pos, radius, half_height);
             }
+            case EXEC_TORUS: {
+                let major = sdf_data[offset];
+                let minor = sdf_data[offset+1];
+                dist = sd_torus(pos, major, minor);
+            }
             case EXEC_CUBOID: {
                 let x = sdf_data[offset];
                 let y = sdf_data[offset + 1];
@@ -219,6 +225,12 @@ fn sd_capsule3d(pos: vec3<f32>, radius: f32, half_length: f32) -> f32 {
 fn sd_cylinder(pos: vec3<f32>, radius: f32, half_height: f32) -> f32 {
     let d = abs(vec2<f32>(length(pos.xz), pos.y)) - vec2<f32>(radius, half_height);
     return min(max(d.x, d.y), 0.0) + length(max(d, vec2<f32>(0.)));
+}
+
+fn sd_torus(pos: vec3f, major: f32, minor: f32) -> f32 {
+    let h = length(pos.xz);
+    let from_major = h - major;
+    return length(vec2f(from_major, pos.y)) - minor;
 }
 
 fn sd_cuboid(pos: vec3<f32>, bounds: vec3<f32>) -> f32 {

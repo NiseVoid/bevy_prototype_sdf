@@ -4,7 +4,9 @@ use crate::{Dim, Sdf, SdfBounding};
 
 #[cfg(feature = "bevy")]
 use bevy::reflect::Reflect;
-use bevy_math::{FloatPow, Isometry3d, Quat, Vec3, bounding::*, primitives::*};
+use bevy_math::{
+    FloatPow, Isometry3d, Quat, Vec3, Vec3Swizzles, bounding::*, primitives::*, vec2, vec3,
+};
 
 #[cfg(all(feature = "bevy", feature = "serialize"))]
 use bevy::reflect::ReflectDeserialize;
@@ -90,54 +92,6 @@ impl Sdf<Dim3> for Capsule3d {
     }
 }
 
-impl Sdf<Dim3> for Cuboid {
-    fn distance(&self, pos: Vec3) -> f32 {
-        let q = pos.abs() - self.half_size;
-        let l = q.max(Vec3::ZERO).length();
-        l + q.max_element().min(0.)
-    }
-
-    fn gradient(&self, pos: Vec3) -> Vec3 {
-        if pos == Vec3::ZERO {
-            return Vec3::ZERO;
-        }
-
-        let q = pos.abs() - self.half_size;
-        if q.cmpgt(Vec3::ZERO).any() {
-            // If we are outside the box, we can normalize q_or_zero and match it to the
-            // pos sign (so we get the direction relative to the octant we are on)
-            q.max(Vec3::ZERO).normalize().copysign(pos)
-        } else {
-            // If we are on the inside, the gradient points to a normalized vector of the
-            // closests sides
-            let distance = -q;
-            let min = distance.min_element();
-            Vec3::select(distance.cmpeq(Vec3::splat(min)), pos.signum(), Vec3::ZERO).normalize()
-        }
-    }
-
-    fn dist_grad(&self, pos: Vec3) -> (f32, Vec3) {
-        if pos == Vec3::ZERO {
-            return (-self.half_size.min_element(), Vec3::ZERO);
-        }
-
-        let q = pos.abs() - self.half_size;
-        if q.cmpgt(Vec3::ZERO).any() {
-            let q_or_zero = q.max(Vec3::ZERO);
-            let l = q_or_zero.length();
-            (l + q.max_element().min(0.), (q_or_zero / l).copysign(pos))
-        } else {
-            let distances = -q;
-            let dist = distances.min_element();
-            (
-                dist,
-                Vec3::select(distances.cmpeq(Vec3::splat(dist)), pos.signum(), Vec3::ZERO)
-                    .normalize(),
-            )
-        }
-    }
-}
-
 fn cylinder_base(s: &Cylinder, pos: Vec3) -> (bevy_math::Vec2, f32, bevy_math::Vec2) {
     use bevy_math::{Vec2, Vec3Swizzles};
     let p2d = pos.xz();
@@ -195,6 +149,76 @@ impl Sdf<Dim3> for Cylinder {
                     d_or_zero * grad2d.y,
                 )
                 .normalize(),
+            )
+        }
+    }
+}
+
+impl Sdf<Dim3> for Torus {
+    fn distance(&self, pos: Vec3) -> f32 {
+        let h = pos.xz().length();
+        let from_major = h - self.major_radius;
+        vec2(from_major, pos.y).length() - self.minor_radius
+    }
+
+    fn gradient(&self, pos: Vec3) -> Vec3 {
+        let h = pos.xz().length();
+        let from_major = h - self.major_radius;
+        pos * vec3(from_major, h, from_major).normalize()
+    }
+
+    fn dist_grad(&self, pos: Vec3) -> (f32, Vec3) {
+        let h = pos.xz().length();
+        let from_major = h - self.major_radius;
+        let dist = vec2(from_major, pos.y).length() - self.minor_radius;
+        let grad = pos * vec3(from_major, h, from_major).normalize();
+        (dist, grad)
+    }
+}
+
+impl Sdf<Dim3> for Cuboid {
+    fn distance(&self, pos: Vec3) -> f32 {
+        let q = pos.abs() - self.half_size;
+        let l = q.max(Vec3::ZERO).length();
+        l + q.max_element().min(0.)
+    }
+
+    fn gradient(&self, pos: Vec3) -> Vec3 {
+        if pos == Vec3::ZERO {
+            return Vec3::ZERO;
+        }
+
+        let q = pos.abs() - self.half_size;
+        if q.cmpgt(Vec3::ZERO).any() {
+            // If we are outside the box, we can normalize q_or_zero and match it to the
+            // pos sign (so we get the direction relative to the octant we are on)
+            q.max(Vec3::ZERO).normalize().copysign(pos)
+        } else {
+            // If we are on the inside, the gradient points to a normalized vector of the
+            // closests sides
+            let distance = -q;
+            let min = distance.min_element();
+            Vec3::select(distance.cmpeq(Vec3::splat(min)), pos.signum(), Vec3::ZERO).normalize()
+        }
+    }
+
+    fn dist_grad(&self, pos: Vec3) -> (f32, Vec3) {
+        if pos == Vec3::ZERO {
+            return (-self.half_size.min_element(), Vec3::ZERO);
+        }
+
+        let q = pos.abs() - self.half_size;
+        if q.cmpgt(Vec3::ZERO).any() {
+            let q_or_zero = q.max(Vec3::ZERO);
+            let l = q_or_zero.length();
+            (l + q.max_element().min(0.), (q_or_zero / l).copysign(pos))
+        } else {
+            let distances = -q;
+            let dist = distances.min_element();
+            (
+                dist,
+                Vec3::select(distances.cmpeq(Vec3::splat(dist)), pos.signum(), Vec3::ZERO)
+                    .normalize(),
             )
         }
     }

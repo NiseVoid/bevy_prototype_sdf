@@ -58,8 +58,9 @@ pub enum PrettySerdeTree3d {
 
     // 3D primitives
     Sphere(f32),
-    Cylinder { radius: f32, half_height: f32 },
     Capsule { radius: f32, half_length: f32 },
+    Cylinder { radius: f32, half_height: f32 },
+    Torus { major: f32, minor: f32 },
     Cuboid(f32, f32, f32),
     InfinitePlane(f32, f32, f32),
 }
@@ -119,6 +120,13 @@ impl PrettySerdeTree3d {
                 let circle = Sphere::load(&tree.data[data..]);
                 Self::Sphere(circle.radius)
             }
+            AnySdf::Capsule3d => {
+                let capsule = Capsule3d::load(&tree.data[data..]);
+                Self::Capsule {
+                    radius: capsule.radius,
+                    half_length: capsule.half_length,
+                }
+            }
             AnySdf::Cylinder => {
                 let cylinder = Cylinder::load(&tree.data[data..]);
                 Self::Cylinder {
@@ -126,11 +134,11 @@ impl PrettySerdeTree3d {
                     half_height: cylinder.half_height,
                 }
             }
-            AnySdf::Capsule3d => {
-                let capsule = Capsule3d::load(&tree.data[data..]);
-                Self::Capsule {
-                    radius: capsule.radius,
-                    half_length: capsule.half_length,
+            AnySdf::Torus => {
+                let torus = Torus::load(&tree.data[data..]);
+                Self::Torus {
+                    major: torus.major_radius,
+                    minor: torus.minor_radius,
                 }
             }
             AnySdf::Cuboid => {
@@ -216,6 +224,15 @@ impl PrettySerdeTree3d {
             Self::Sphere(radius) => {
                 tree.add_primitive(Sphere { radius });
             }
+            Self::Capsule {
+                radius,
+                half_length,
+            } => {
+                tree.add_primitive(Capsule3d {
+                    radius,
+                    half_length,
+                });
+            }
             Self::Cylinder {
                 radius,
                 half_height,
@@ -225,13 +242,10 @@ impl PrettySerdeTree3d {
                     half_height,
                 });
             }
-            Self::Capsule {
-                radius,
-                half_length,
-            } => {
-                tree.add_primitive(Capsule3d {
-                    radius,
-                    half_length,
+            Self::Torus { major, minor } => {
+                tree.add_primitive(Torus {
+                    major_radius: major,
+                    minor_radius: minor,
                 });
             }
             Self::Cuboid(x, y, z) => {
@@ -308,6 +322,7 @@ impl PrettySerdeTree2d {
             AnySdf::Sphere
             | AnySdf::Capsule3d
             | AnySdf::Cylinder
+            | AnySdf::Torus
             | AnySdf::Cuboid
             | AnySdf::InfinitePlane3d => {
                 panic!("3D primitives can't be turned into a 2D tree");
