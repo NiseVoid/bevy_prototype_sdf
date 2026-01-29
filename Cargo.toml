@@ -23,8 +23,8 @@ bevy_asset = ["bevy", "bevy/bevy_asset", "serialize", "dep:thiserror", "dep:ron"
 shader = ["bevy/bevy_render", "bevy/bevy_asset"]
 
 [dependencies]
-bevy_math = {version = "0.17", default-features=false, features=["nostd-libm"]}
-bevy = {version = "0.17", default-features=false, optional=true}
+bevy_math = {version = "0.18", default-features=false, features=["nostd-libm"]}
+bevy = {version = "0.18", default-features=false, optional=true}
 serde = {version = "1.0", features=["serde_derive"], optional=true}
 arrayvec = {version = "0.7", default-features=false}
 thiserror = {version = "2.0", default-features=false, optional=true}
