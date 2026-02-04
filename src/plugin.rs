@@ -52,6 +52,7 @@ impl Plugin for SdfPlugin {
 pub struct SdfProcessing;
 
 #[cfg(feature = "bevy_asset")]
+#[derive(TypePath)]
 struct SdfAssetLoader<D: Dim>(PhantomData<D>);
 
 #[cfg(feature = "bevy_asset")]
